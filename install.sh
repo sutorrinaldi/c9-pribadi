@@ -14,6 +14,16 @@ C9_PHP_VERSION="${C9_PHP_VERSION:-8.3}"
 C9_PHP_PACKAGES="${C9_PHP_PACKAGES:-}"
 C9_INSTALL_COMPOSER="${C9_INSTALL_COMPOSER:-1}"
 C9_COMPOSER_APT_PACKAGE="${C9_COMPOSER_APT_PACKAGE:-composer}"
+C9_INSTALL_PYTHON2_PIP="${C9_INSTALL_PYTHON2_PIP:-1}"
+C9_PYTHON2_GET_PIP_URL="${C9_PYTHON2_GET_PIP_URL:-https://bootstrap.pypa.io/pip/2.7/get-pip.py}"
+C9_INSTALL_PHP_IMAGICK="${C9_INSTALL_PHP_IMAGICK:-1}"
+C9_PHP_IMAGICK_APT_PACKAGE="${C9_PHP_IMAGICK_APT_PACKAGE:-php-imagick}"
+C9_INSTALL_PHP_REDIS="${C9_INSTALL_PHP_REDIS:-1}"
+C9_PHP_REDIS_APT_PACKAGE="${C9_PHP_REDIS_APT_PACKAGE:-php-redis}"
+C9_INSTALL_IMAGEMAGICK="${C9_INSTALL_IMAGEMAGICK:-1}"
+C9_IMAGEMAGICK_APT_PACKAGE="${C9_IMAGEMAGICK_APT_PACKAGE:-imagemagick}"
+C9_INSTALL_REDIS_SERVER="${C9_INSTALL_REDIS_SERVER:-1}"
+C9_REDIS_SERVER_APT_PACKAGE="${C9_REDIS_SERVER_APT_PACKAGE:-redis-server}"
 C9_SERVICE_NAME="${C9_SERVICE_NAME:-c9-pribadi}"
 C9_RUNTIME_USER="${C9_RUNTIME_USER:-c9pribadi}"
 C9_RUNTIME_GROUP="${C9_RUNTIME_GROUP:-c9pribadi}"
@@ -95,6 +105,14 @@ cleanup_on_exit() {
 }
 
 trap cleanup_on_exit EXIT
+
+is_enabled() {
+    case "$1" in
+        1|true|TRUE|yes|YES) return 0 ;;
+        0|false|FALSE|no|NO) return 1 ;;
+        *) return 2 ;;
+    esac
+}
 
 require_ubuntu() {
     case "${ubuntu_version}" in
@@ -229,20 +247,57 @@ install_php_runtime() {
 }
 
 install_composer_runtime() {
-    case "${C9_INSTALL_COMPOSER}" in
-        1|true|TRUE|yes|YES) ;;
-        0|false|FALSE|no|NO)
-            return
-            ;;
-        *)
-            die "C9_INSTALL_COMPOSER must be 1/0, true/false, or yes/no."
-            ;;
-    esac
+    if is_enabled "${C9_INSTALL_COMPOSER}"; then
+        :
+    elif [[ $? -eq 1 ]]; then
+        return
+    else
+        die "C9_INSTALL_COMPOSER must be 1/0, true/false, or yes/no."
+    fi
 
     [[ -n "${C9_COMPOSER_APT_PACKAGE}" ]] || die "C9_COMPOSER_APT_PACKAGE must not be empty."
 
     log "Installing Composer runtime"
     "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${C9_COMPOSER_APT_PACKAGE}"
+}
+
+install_optional_runtime_packages() {
+    local packages=()
+
+    if is_enabled "${C9_INSTALL_IMAGEMAGICK}"; then
+        [[ -n "${C9_IMAGEMAGICK_APT_PACKAGE}" ]] || die "C9_IMAGEMAGICK_APT_PACKAGE must not be empty."
+        packages+=("${C9_IMAGEMAGICK_APT_PACKAGE}")
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_IMAGEMAGICK must be 1/0, true/false, or yes/no."
+    fi
+
+    if is_enabled "${C9_INSTALL_PHP_IMAGICK}"; then
+        [[ -n "${C9_PHP_IMAGICK_APT_PACKAGE}" ]] || die "C9_PHP_IMAGICK_APT_PACKAGE must not be empty."
+        packages+=("${C9_PHP_IMAGICK_APT_PACKAGE}")
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_PHP_IMAGICK must be 1/0, true/false, or yes/no."
+    fi
+
+    if is_enabled "${C9_INSTALL_PHP_REDIS}"; then
+        [[ -n "${C9_PHP_REDIS_APT_PACKAGE}" ]] || die "C9_PHP_REDIS_APT_PACKAGE must not be empty."
+        packages+=("${C9_PHP_REDIS_APT_PACKAGE}")
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_PHP_REDIS must be 1/0, true/false, or yes/no."
+    fi
+
+    if is_enabled "${C9_INSTALL_REDIS_SERVER}"; then
+        [[ -n "${C9_REDIS_SERVER_APT_PACKAGE}" ]] || die "C9_REDIS_SERVER_APT_PACKAGE must not be empty."
+        packages+=("${C9_REDIS_SERVER_APT_PACKAGE}")
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_REDIS_SERVER must be 1/0, true/false, or yes/no."
+    fi
+
+    if [[ "${#packages[@]}" -eq 0 ]]; then
+        return
+    fi
+
+    log "Installing optional runtimes: ${packages[*]}"
+    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
 }
 
 install_python2_runtime() {
@@ -284,14 +339,54 @@ PY
     "${SUDO[@]}" ln -sfn "${python2_bin}" /usr/local/bin/python2.7
 }
 
+install_python2_pip_runtime() {
+    local python2_bin python2_pip_bin temp_dir get_pip_path
+
+    if is_enabled "${C9_INSTALL_PYTHON2_PIP}"; then
+        :
+    elif [[ $? -eq 1 ]]; then
+        return
+    else
+        die "C9_INSTALL_PYTHON2_PIP must be 1/0, true/false, or yes/no."
+    fi
+
+    python2_bin="${C9_PYTHON2_PREFIX}/bin/python2.7"
+    [[ -x "${python2_bin}" ]] || die "Python 2.7 binary missing before pip install: ${python2_bin}"
+
+    if ! "${python2_bin}" -m pip --version >/dev/null 2>&1; then
+        log "Installing pip for Python 2.7"
+        if ! "${SUDO[@]}" "${python2_bin}" -m ensurepip --default-pip >/dev/null 2>&1; then
+            temp_dir="$(mktemp -d)"
+            register_temp_dir "${temp_dir}"
+            get_pip_path="${temp_dir}/get-pip.py"
+            register_temp_file "${get_pip_path}"
+            curl -fsSL "${C9_PYTHON2_GET_PIP_URL}" -o "${get_pip_path}"
+            "${SUDO[@]}" "${python2_bin}" "${get_pip_path}" "pip<21" "setuptools<45" "wheel<1"
+        fi
+    fi
+
+    python2_pip_bin="${C9_PYTHON2_PREFIX}/bin/pip2.7"
+    if [[ ! -x "${python2_pip_bin}" && -x "${C9_PYTHON2_PREFIX}/bin/pip2" ]]; then
+        python2_pip_bin="${C9_PYTHON2_PREFIX}/bin/pip2"
+    fi
+
+    [[ -x "${python2_pip_bin}" ]] || die "Python 2 pip binary missing after install."
+    "${SUDO[@]}" ln -sfn "${python2_pip_bin}" /usr/local/bin/pip2
+    "${SUDO[@]}" ln -sfn "${python2_pip_bin}" /usr/local/bin/pip2.7
+}
+
 install_python_command_aliases() {
-    local python3_bin
+    local python3_bin pip3_bin
 
     python3_bin="$(command -v python3 || true)"
     [[ -n "${python3_bin}" ]] || die "python3 binary not found after package installation."
+    pip3_bin="$(command -v pip3 || true)"
+    [[ -n "${pip3_bin}" ]] || die "pip3 binary not found after package installation."
 
     "${SUDO[@]}" ln -sfn "${python3_bin}" /usr/local/bin/python
     "${SUDO[@]}" ln -sfn "${python3_bin}" /usr/local/bin/python3
+    "${SUDO[@]}" ln -sfn "${pip3_bin}" /usr/local/bin/pip
+    "${SUDO[@]}" ln -sfn "${pip3_bin}" /usr/local/bin/pip3
 }
 
 validate_language_commands() {
@@ -299,6 +394,8 @@ validate_language_commands() {
     command -v python >/dev/null 2>&1 || die "python binary not found after alias setup."
     command -v python2 >/dev/null 2>&1 || die "python2 binary not found after Python 2.7 install."
     command -v python3 >/dev/null 2>&1 || die "python3 binary not found after package installation."
+    command -v pip >/dev/null 2>&1 || die "pip binary not found after alias setup."
+    command -v pip3 >/dev/null 2>&1 || die "pip3 binary not found after package installation."
 
     php -r 'exit((int)(PHP_MAJOR_VERSION !== 8));' >/dev/null 2>&1 \
         || die "php must point to PHP 8."
@@ -313,17 +410,82 @@ import sys
 sys.exit(0 if sys.version_info[0] == 3 else 1)
 PY
 
+    pip --version >/dev/null 2>&1 || die "pip command failed validation."
+    pip3 --version >/dev/null 2>&1 || die "pip3 command failed validation."
+
     python2 - <<'PY' >/dev/null 2>&1 || die "python2 must point to Python 2.7."
 import sys
 sys.exit(0 if sys.version_info[:2] == (2, 7) else 1)
 PY
 
-    case "${C9_INSTALL_COMPOSER}" in
-        1|true|TRUE|yes|YES)
-            command -v composer >/dev/null 2>&1 || die "composer binary not found after package installation."
-            composer --version >/dev/null 2>&1 || die "composer command failed after package installation."
-            ;;
-    esac
+    if is_enabled "${C9_INSTALL_PYTHON2_PIP}"; then
+        command -v pip2 >/dev/null 2>&1 || die "pip2 binary not found after Python 2 pip install."
+        pip2 --version >/dev/null 2>&1 || die "pip2 command failed validation."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_PYTHON2_PIP must be 1/0, true/false, or yes/no."
+    fi
+
+    if is_enabled "${C9_INSTALL_COMPOSER}"; then
+        command -v composer >/dev/null 2>&1 || die "composer binary not found after package installation."
+        composer --version >/dev/null 2>&1 || die "composer command failed after package installation."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_COMPOSER must be 1/0, true/false, or yes/no."
+    fi
+}
+
+validate_optional_runtime_packages() {
+    if is_enabled "${C9_INSTALL_IMAGEMAGICK}"; then
+        command -v magick >/dev/null 2>&1 || command -v convert >/dev/null 2>&1 \
+            || die "ImageMagick binary not found after package installation."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_IMAGEMAGICK must be 1/0, true/false, or yes/no."
+    fi
+
+    if is_enabled "${C9_INSTALL_PHP_IMAGICK}"; then
+        php -r 'exit((int)!extension_loaded("imagick"));' >/dev/null 2>&1 \
+            || die "PHP imagick extension failed validation."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_PHP_IMAGICK must be 1/0, true/false, or yes/no."
+    fi
+
+    if is_enabled "${C9_INSTALL_PHP_REDIS}"; then
+        php -r 'exit((int)!extension_loaded("redis"));' >/dev/null 2>&1 \
+            || die "PHP redis extension failed validation."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_PHP_REDIS must be 1/0, true/false, or yes/no."
+    fi
+}
+
+validate_node_commands() {
+    command -v node >/dev/null 2>&1 || die "node binary not found after runtime installation."
+    command -v npm >/dev/null 2>&1 || die "npm binary not found after runtime installation."
+    command -v npx >/dev/null 2>&1 || die "npx binary not found after runtime installation."
+
+    node --version >/dev/null 2>&1 || die "node command failed validation."
+    npm --version >/dev/null 2>&1 || die "npm command failed validation."
+    npx --version >/dev/null 2>&1 || die "npx command failed validation."
+}
+
+enable_optional_runtime_services() {
+    if is_enabled "${C9_INSTALL_REDIS_SERVER}"; then
+        log "Enabling Redis service"
+        "${SUDO[@]}" systemctl enable --now redis-server >/dev/null 2>&1 \
+            || die "Failed to enable redis-server service."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_REDIS_SERVER must be 1/0, true/false, or yes/no."
+    fi
+}
+
+validate_optional_runtime_services() {
+    if is_enabled "${C9_INSTALL_REDIS_SERVER}"; then
+        command -v redis-server >/dev/null 2>&1 || die "redis-server binary not found after package installation."
+        command -v redis-cli >/dev/null 2>&1 || die "redis-cli binary not found after package installation."
+        "${SUDO[@]}" systemctl is-active redis-server >/dev/null 2>&1 \
+            || die "redis-server service is not active after installation."
+        redis-cli ping >/dev/null 2>&1 || die "redis-cli ping failed after installation."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_REDIS_SERVER must be 1/0, true/false, or yes/no."
+    fi
 }
 
 normalize_arch() {
@@ -1113,11 +1275,15 @@ main() {
     update_packages
     install_base_packages
     install_php_runtime
+    install_optional_runtime_packages
     install_composer_runtime
     install_python2_runtime
+    install_python2_pip_runtime
     install_python_command_aliases
     validate_language_commands
+    validate_optional_runtime_packages
     install_node_runtime
+    validate_node_commands
     prepare_c9_checkout
     verify_c9_commit
     run_npm_install
@@ -1139,6 +1305,8 @@ main() {
     validate_workspace_backend
     create_launcher
     create_systemd_service
+    enable_optional_runtime_services
+    validate_optional_runtime_services
     validate_systemd_service
     print_summary
 }

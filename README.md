@@ -18,9 +18,14 @@ Setelah install selesai:
 - jika instalasi gagal di tengah jalan, installer membersihkan temporary directory, tarball Node.js, dan cache npm yang dibuat selama proses install
 - setelah `systemctl enable --now`, installer langsung memverifikasi service aktif; jika gagal start, log `journalctl` terakhir akan ditampilkan lalu install dihentikan
 - terminal Cloud9 langsung punya PHP 8 lengkap untuk CLI dan extension umum
+- extension PHP `imagick` dan `redis` langsung dipasang
+- `redis-server` langsung dipasang dan dijalankan sebagai service
 - `composer` langsung tersedia setelah install
+- `pip` dan `pip3` permanen diarahkan ke Python 3
+- `pip2` permanen diarahkan ke Python 2.7
 - `python2` permanen diarahkan ke `Python 2.7`
 - `python` dan `python3` permanen diarahkan ke `Python 3`
+- `node`, `npm`, dan `npx` langsung tersedia setelah install
 
 ## Dukungan
 
@@ -69,9 +74,19 @@ Command runtime setelah install:
 
 - `php file.php`
 - `composer install`
+- `php -m | grep imagick`
+- `php -m | grep redis`
+- `python -m pip install nama-paket`
+- `pip install nama-paket`
+- `pip3 install nama-paket`
+- `pip2 install nama-paket`
 - `python file.py` menjalankan Python 3
 - `python3 file.py` menjalankan Python 3
 - `python2 file.py` menjalankan Python 2.7
+- `node app.js`
+- `npm install`
+- `npx nama-tool`
+- `redis-cli ping`
 
 ## Popup installer
 
@@ -139,6 +154,16 @@ Variabel yang bisa diubah:
 - `C9_PHP_PACKAGES`
 - `C9_INSTALL_COMPOSER`
 - `C9_COMPOSER_APT_PACKAGE`
+- `C9_INSTALL_PYTHON2_PIP`
+- `C9_PYTHON2_GET_PIP_URL`
+- `C9_INSTALL_PHP_IMAGICK`
+- `C9_PHP_IMAGICK_APT_PACKAGE`
+- `C9_INSTALL_PHP_REDIS`
+- `C9_PHP_REDIS_APT_PACKAGE`
+- `C9_INSTALL_IMAGEMAGICK`
+- `C9_IMAGEMAGICK_APT_PACKAGE`
+- `C9_INSTALL_REDIS_SERVER`
+- `C9_REDIS_SERVER_APT_PACKAGE`
 - `C9_EXTRA_APT_PACKAGES`
 - `C9_PYTHON3_APT_PACKAGES`
 - `C9_PYTHON2_BUILD_APT_PACKAGES`
@@ -160,6 +185,12 @@ Kalau tidak ingin Composer dipasang:
 
 ```bash
 sudo C9_INSTALL_COMPOSER=0 ./install.sh
+```
+
+Kalau tidak ingin Redis service dan extension tambahan dipasang:
+
+```bash
+sudo C9_INSTALL_REDIS_SERVER=0 C9_INSTALL_PHP_REDIS=0 C9_INSTALL_PHP_IMAGICK=0 ./install.sh
 ```
 
 ## Reinstall atau update
