@@ -19,6 +19,7 @@ Setelah install selesai:
 - setelah `systemctl enable --now`, installer langsung memverifikasi service aktif; jika gagal start, log `journalctl` terakhir akan ditampilkan lalu install dihentikan
 - terminal Cloud9 langsung punya PHP 8 lengkap untuk CLI dan extension umum
 - extension PHP `imagick` dan `redis` langsung dipasang
+- `ffmpeg` langsung tersedia untuk encode, transcode, dan probing media
 - `redis-server` langsung dipasang dan dijalankan sebagai service
 - `composer` langsung tersedia setelah install
 - `pip` dan `pip3` permanen diarahkan ke Python 3
@@ -76,6 +77,8 @@ Command runtime setelah install:
 - `composer install`
 - `php -m | grep imagick`
 - `php -m | grep redis`
+- `ffmpeg -version`
+- `ffprobe -version`
 - `python -m pip install nama-paket`
 - `pip install nama-paket`
 - `pip3 install nama-paket`
@@ -162,6 +165,8 @@ Variabel yang bisa diubah:
 - `C9_PHP_REDIS_APT_PACKAGE`
 - `C9_INSTALL_IMAGEMAGICK`
 - `C9_IMAGEMAGICK_APT_PACKAGE`
+- `C9_INSTALL_FFMPEG`
+- `C9_FFMPEG_APT_PACKAGE`
 - `C9_INSTALL_REDIS_SERVER`
 - `C9_REDIS_SERVER_APT_PACKAGE`
 - `C9_EXTRA_APT_PACKAGES`
@@ -191,6 +196,12 @@ Kalau tidak ingin Redis service dan extension tambahan dipasang:
 
 ```bash
 sudo C9_INSTALL_REDIS_SERVER=0 C9_INSTALL_PHP_REDIS=0 C9_INSTALL_PHP_IMAGICK=0 ./install.sh
+```
+
+Kalau tidak ingin `ffmpeg` dipasang:
+
+```bash
+sudo C9_INSTALL_FFMPEG=0 ./install.sh
 ```
 
 ## Reinstall atau update

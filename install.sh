@@ -22,6 +22,8 @@ C9_INSTALL_PHP_REDIS="${C9_INSTALL_PHP_REDIS:-1}"
 C9_PHP_REDIS_APT_PACKAGE="${C9_PHP_REDIS_APT_PACKAGE:-php-redis}"
 C9_INSTALL_IMAGEMAGICK="${C9_INSTALL_IMAGEMAGICK:-1}"
 C9_IMAGEMAGICK_APT_PACKAGE="${C9_IMAGEMAGICK_APT_PACKAGE:-imagemagick}"
+C9_INSTALL_FFMPEG="${C9_INSTALL_FFMPEG:-1}"
+C9_FFMPEG_APT_PACKAGE="${C9_FFMPEG_APT_PACKAGE:-ffmpeg}"
 C9_INSTALL_REDIS_SERVER="${C9_INSTALL_REDIS_SERVER:-1}"
 C9_REDIS_SERVER_APT_PACKAGE="${C9_REDIS_SERVER_APT_PACKAGE:-redis-server}"
 C9_SERVICE_NAME="${C9_SERVICE_NAME:-c9-pribadi}"
@@ -271,6 +273,13 @@ install_optional_runtime_packages() {
         die "C9_INSTALL_IMAGEMAGICK must be 1/0, true/false, or yes/no."
     fi
 
+    if is_enabled "${C9_INSTALL_FFMPEG}"; then
+        [[ -n "${C9_FFMPEG_APT_PACKAGE}" ]] || die "C9_FFMPEG_APT_PACKAGE must not be empty."
+        packages+=("${C9_FFMPEG_APT_PACKAGE}")
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_FFMPEG must be 1/0, true/false, or yes/no."
+    fi
+
     if is_enabled "${C9_INSTALL_PHP_IMAGICK}"; then
         [[ -n "${C9_PHP_IMAGICK_APT_PACKAGE}" ]] || die "C9_PHP_IMAGICK_APT_PACKAGE must not be empty."
         packages+=("${C9_PHP_IMAGICK_APT_PACKAGE}")
@@ -439,6 +448,15 @@ validate_optional_runtime_packages() {
             || die "ImageMagick binary not found after package installation."
     elif [[ $? -ne 1 ]]; then
         die "C9_INSTALL_IMAGEMAGICK must be 1/0, true/false, or yes/no."
+    fi
+
+    if is_enabled "${C9_INSTALL_FFMPEG}"; then
+        command -v ffmpeg >/dev/null 2>&1 || die "ffmpeg binary not found after package installation."
+        command -v ffprobe >/dev/null 2>&1 || die "ffprobe binary not found after package installation."
+        ffmpeg -version >/dev/null 2>&1 || die "ffmpeg command failed validation."
+        ffprobe -version >/dev/null 2>&1 || die "ffprobe command failed validation."
+    elif [[ $? -ne 1 ]]; then
+        die "C9_INSTALL_FFMPEG must be 1/0, true/false, or yes/no."
     fi
 
     if is_enabled "${C9_INSTALL_PHP_IMAGICK}"; then
