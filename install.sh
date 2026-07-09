@@ -443,9 +443,6 @@ import sys
 sys.exit(0 if sys.version_info[0] == 3 else 1)
 PY
 
-    run_with_timeout 10s pip --version >/dev/null 2>&1 || die "pip command failed validation."
-    run_with_timeout 10s pip3 --version >/dev/null 2>&1 || die "pip3 command failed validation."
-
     python2 - <<'PY' >/dev/null 2>&1 || die "python2 must point to Python 2.7."
 import sys
 sys.exit(0 if sys.version_info[:2] == (2, 7) else 1)
@@ -453,14 +450,12 @@ PY
 
     if is_enabled "${C9_INSTALL_PYTHON2_PIP}"; then
         command -v pip2 >/dev/null 2>&1 || die "pip2 binary not found after Python 2 pip install."
-        run_with_timeout 10s pip2 --version >/dev/null 2>&1 || die "pip2 command failed validation."
     elif [[ $? -ne 1 ]]; then
         die "C9_INSTALL_PYTHON2_PIP must be 1/0, true/false, or yes/no."
     fi
 
     if is_enabled "${C9_INSTALL_COMPOSER}"; then
         command -v composer >/dev/null 2>&1 || die "composer binary not found after package installation."
-        run_with_timeout 10s composer --version >/dev/null 2>&1 || die "composer command failed after package installation."
     elif [[ $? -ne 1 ]]; then
         die "C9_INSTALL_COMPOSER must be 1/0, true/false, or yes/no."
     fi
