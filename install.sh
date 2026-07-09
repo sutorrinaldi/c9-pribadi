@@ -255,7 +255,7 @@ validate_c9_install() {
 
     (
         cd "${C9_INSTALL_DIR}"
-        node -e "require.resolve('amd-loader'); require.resolve('architect'); require.resolve('connect/lib/utils'); require.resolve('simple-mime'); require.resolve('engine.io'); require.resolve('kaefer'); require.resolve('smith'); require.resolve('./plugins/node_modules/vfs-child'); require.resolve('./plugins/node_modules/vfs-local'); require.resolve('./plugins/node_modules/vfs-socket'); require('./server.js');"
+        node -e "require.resolve('amd-loader'); require.resolve('architect'); require.resolve('connect/lib/utils'); require.resolve('simple-mime'); require.resolve('engine.io'); require.resolve('kaefer'); require.resolve('smith'); require.resolve('./plugins/node_modules/vfs-child'); require.resolve('./plugins/node_modules/vfs-local'); require.resolve('./plugins/node_modules/vfs-socket/consumer'); require.resolve('./plugins/node_modules/vfs-http-adapter/restful'); require.resolve('./plugins/node_modules/vfs-nodefs-adapter/nodefs'); require('./server.js');"
     )
 }
 
