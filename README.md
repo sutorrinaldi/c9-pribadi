@@ -18,6 +18,7 @@ Setelah install selesai:
 - jika instalasi gagal di tengah jalan, installer membersihkan temporary directory, tarball Node.js, dan cache npm yang dibuat selama proses install
 - setelah `systemctl enable --now`, installer langsung memverifikasi service aktif; jika gagal start, log `journalctl` terakhir akan ditampilkan lalu install dihentikan
 - terminal Cloud9 langsung punya PHP 8 lengkap untuk CLI dan extension umum
+- `composer` langsung tersedia setelah install
 - `python2` permanen diarahkan ke `Python 2.7`
 - `python` dan `python3` permanen diarahkan ke `Python 3`
 
@@ -67,6 +68,7 @@ Setelah selesai, buka URL yang ditampilkan installer lalu login.
 Command runtime setelah install:
 
 - `php file.php`
+- `composer install`
 - `python file.py` menjalankan Python 3
 - `python3 file.py` menjalankan Python 3
 - `python2 file.py` menjalankan Python 2.7
@@ -135,6 +137,8 @@ Variabel yang bisa diubah:
 - `C9_NODE_VERSION`
 - `C9_PHP_VERSION`
 - `C9_PHP_PACKAGES`
+- `C9_INSTALL_COMPOSER`
+- `C9_COMPOSER_APT_PACKAGE`
 - `C9_EXTRA_APT_PACKAGES`
 - `C9_PYTHON3_APT_PACKAGES`
 - `C9_PYTHON2_BUILD_APT_PACKAGES`
@@ -150,6 +154,12 @@ Kalau ingin ganti versi PHP 8 yang dipasang:
 
 ```bash
 sudo C9_PHP_VERSION=8.2 ./install.sh
+```
+
+Kalau tidak ingin Composer dipasang:
+
+```bash
+sudo C9_INSTALL_COMPOSER=0 ./install.sh
 ```
 
 ## Reinstall atau update

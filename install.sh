@@ -12,6 +12,8 @@ C9_NODE_VERSION="${C9_NODE_VERSION:-}"
 C9_NODE_DIST_MIRROR="${C9_NODE_DIST_MIRROR:-https://nodejs.org/dist}"
 C9_PHP_VERSION="${C9_PHP_VERSION:-8.3}"
 C9_PHP_PACKAGES="${C9_PHP_PACKAGES:-}"
+C9_INSTALL_COMPOSER="${C9_INSTALL_COMPOSER:-1}"
+C9_COMPOSER_APT_PACKAGE="${C9_COMPOSER_APT_PACKAGE:-composer}"
 C9_SERVICE_NAME="${C9_SERVICE_NAME:-c9-pribadi}"
 C9_RUNTIME_USER="${C9_RUNTIME_USER:-c9pribadi}"
 C9_RUNTIME_GROUP="${C9_RUNTIME_GROUP:-c9pribadi}"
@@ -137,7 +139,9 @@ install_base_packages() {
         software-properties-common
         tar
         tmux
+        unzip
         xz-utils
+        zip
     )
     local python3_packages=()
     local python2_build_packages=()
@@ -224,6 +228,23 @@ install_php_runtime() {
     "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${php_packages[@]}"
 }
 
+install_composer_runtime() {
+    case "${C9_INSTALL_COMPOSER}" in
+        1|true|TRUE|yes|YES) ;;
+        0|false|FALSE|no|NO)
+            return
+            ;;
+        *)
+            die "C9_INSTALL_COMPOSER must be 1/0, true/false, or yes/no."
+            ;;
+    esac
+
+    [[ -n "${C9_COMPOSER_APT_PACKAGE}" ]] || die "C9_COMPOSER_APT_PACKAGE must not be empty."
+
+    log "Installing Composer runtime"
+    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${C9_COMPOSER_APT_PACKAGE}"
+}
+
 install_python2_runtime() {
     local python2_version python2_prefix python2_bin python2_tarball python2_url temp_dir build_jobs
 
@@ -296,6 +317,13 @@ PY
 import sys
 sys.exit(0 if sys.version_info[:2] == (2, 7) else 1)
 PY
+
+    case "${C9_INSTALL_COMPOSER}" in
+        1|true|TRUE|yes|YES)
+            command -v composer >/dev/null 2>&1 || die "composer binary not found after package installation."
+            composer --version >/dev/null 2>&1 || die "composer command failed after package installation."
+            ;;
+    esac
 }
 
 normalize_arch() {
@@ -1085,6 +1113,7 @@ main() {
     update_packages
     install_base_packages
     install_php_runtime
+    install_composer_runtime
     install_python2_runtime
     install_python_command_aliases
     validate_language_commands
