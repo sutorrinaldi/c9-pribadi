@@ -25,20 +25,19 @@ Default yang dipakai:
 
 ## Cara install
 
-Jika repo GitHub Anda berisi file ini di root:
+Paling sederhana, langsung download script lalu jalankan:
 
 ```bash
-git clone https://github.com/sutorrinaldi/REPO.git
-cd REPO
+curl -fsSL https://raw.githubusercontent.com/sutorrinaldi/c9-pribadi/master/install.sh -o install.sh
 chmod +x install.sh
 sudo ./install.sh
 ```
 
-Jika folder `c9-pribadi` masih berada di dalam repo yang lebih besar:
+Atau kalau ingin clone repo penuh:
 
 ```bash
-git clone https://github.com/sutorrinaldi/REPO.git
-cd REPO/c9-pribadi
+git clone https://github.com/sutorrinaldi/c9-pribadi.git
+cd c9-pribadi
 chmod +x install.sh
 sudo ./install.sh
 ```
@@ -105,3 +104,5 @@ Variabel yang bisa diubah:
 ## Catatan
 
 Service dibuat dengan `systemd`, jadi menutup SSH atau keluar dari VPS tidak akan mematikan Cloud9.
+
+Jika repo `public`, `git clone https://github.com/sutorrinaldi/c9-pribadi.git` tidak seharusnya meminta username/password. Prompt login biasanya muncul kalau URL repo salah, repo masih private, atau credential helper Git di server sedang memaksa autentikasi.
