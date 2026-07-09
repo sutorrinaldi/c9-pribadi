@@ -10,6 +10,8 @@ C9_INSTALL_DIR="${C9_INSTALL_DIR:-/opt/c9/core}"
 C9_NODE_MAJOR="${C9_NODE_MAJOR:-14}"
 C9_NODE_VERSION="${C9_NODE_VERSION:-}"
 C9_NODE_DIST_MIRROR="${C9_NODE_DIST_MIRROR:-https://nodejs.org/dist}"
+C9_PHP_VERSION="${C9_PHP_VERSION:-8.3}"
+C9_PHP_PACKAGES="${C9_PHP_PACKAGES:-}"
 C9_SERVICE_NAME="${C9_SERVICE_NAME:-c9-pribadi}"
 C9_RUNTIME_USER="${C9_RUNTIME_USER:-c9pribadi}"
 C9_RUNTIME_GROUP="${C9_RUNTIME_GROUP:-c9pribadi}"
@@ -23,6 +25,12 @@ C9_SETTING_DIR="${C9_SETTING_DIR:-${C9_RUNTIME_HOME}/.c9}"
 C9_NODE_LINK_DIR="${C9_NODE_LINK_DIR:-${C9_SETTING_DIR}/node/bin}"
 C9_PTY_PACKAGE_NAME="${C9_PTY_PACKAGE_NAME:-node-pty-prebuilt-multiarch}"
 C9_PTY_PACKAGE_VERSION="${C9_PTY_PACKAGE_VERSION:-0.10.1-pre.5}"
+C9_PYTHON3_APT_PACKAGES="${C9_PYTHON3_APT_PACKAGES:-python3 python3-dev python3-pip python3-venv}"
+C9_PYTHON2_BUILD_APT_PACKAGES="${C9_PYTHON2_BUILD_APT_PACKAGES:-libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev libncurses-dev libgdbm-dev liblzma-dev uuid-dev}"
+C9_PYTHON2_VERSION="${C9_PYTHON2_VERSION:-2.7.18}"
+C9_PYTHON2_DIST_MIRROR="${C9_PYTHON2_DIST_MIRROR:-https://www.python.org/ftp/python}"
+C9_PYTHON2_PREFIX="${C9_PYTHON2_PREFIX:-/opt/python2.7.18}"
+C9_EXTRA_APT_PACKAGES="${C9_EXTRA_APT_PACKAGES:-}"
 
 SUDO=()
 if [ "${EUID}" -ne 0 ]; then
@@ -118,16 +126,176 @@ update_packages() {
 }
 
 install_base_packages() {
-    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        build-essential \
-        ca-certificates \
-        curl \
-        git \
-        lsb-release \
-        python3 \
-        tar \
-        tmux \
+    local packages=(
+        build-essential
+        ca-certificates
+        curl
+        git
+        gnupg
+        lsb-release
+        python3
+        software-properties-common
+        tar
+        tmux
         xz-utils
+    )
+    local python3_packages=()
+    local python2_build_packages=()
+    local extra_packages=()
+
+    if [[ -n "${C9_PYTHON3_APT_PACKAGES}" ]]; then
+        read -r -a python3_packages <<< "${C9_PYTHON3_APT_PACKAGES}"
+        packages+=("${python3_packages[@]}")
+    fi
+
+    if [[ -n "${C9_PYTHON2_BUILD_APT_PACKAGES}" ]]; then
+        read -r -a python2_build_packages <<< "${C9_PYTHON2_BUILD_APT_PACKAGES}"
+        packages+=("${python2_build_packages[@]}")
+    fi
+
+    if [[ -n "${C9_EXTRA_APT_PACKAGES}" ]]; then
+        read -r -a extra_packages <<< "${C9_EXTRA_APT_PACKAGES}"
+        packages+=("${extra_packages[@]}")
+    fi
+
+    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+}
+
+build_php_package_list() {
+    local package_name
+
+    if [[ -n "${C9_PHP_PACKAGES}" ]]; then
+        for package_name in ${C9_PHP_PACKAGES}; do
+            printf '%s\n' "${package_name}"
+        done
+        return
+    fi
+
+    cat <<EOF
+php${C9_PHP_VERSION}
+php${C9_PHP_VERSION}-cli
+php${C9_PHP_VERSION}-common
+php${C9_PHP_VERSION}-curl
+php${C9_PHP_VERSION}-mbstring
+php${C9_PHP_VERSION}-xml
+php${C9_PHP_VERSION}-zip
+php${C9_PHP_VERSION}-mysql
+php${C9_PHP_VERSION}-sqlite3
+php${C9_PHP_VERSION}-gd
+php${C9_PHP_VERSION}-bcmath
+php${C9_PHP_VERSION}-intl
+php${C9_PHP_VERSION}-soap
+php${C9_PHP_VERSION}-readline
+php${C9_PHP_VERSION}-opcache
+EOF
+}
+
+prepare_php_repository() {
+    local primary_package
+    primary_package="php${C9_PHP_VERSION}-cli"
+
+    if "${SUDO[@]}" apt-cache show "${primary_package}" >/dev/null 2>&1; then
+        return
+    fi
+
+    log "PHP ${C9_PHP_VERSION} not found in current apt sources. Adding Ondrej PHP PPA"
+    if ! "${SUDO[@]}" grep -Rqs "ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
+        "${SUDO[@]}" add-apt-repository -y ppa:ondrej/php
+    fi
+
+    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get update -y
+    "${SUDO[@]}" apt-cache show "${primary_package}" >/dev/null 2>&1 \
+        || die "Package ${primary_package} still unavailable after adding PHP repository."
+}
+
+install_php_runtime() {
+    local php_packages=()
+    local package_name
+
+    prepare_php_repository
+    while IFS= read -r package_name; do
+        [[ -n "${package_name}" ]] || continue
+        php_packages+=("${package_name}")
+    done < <(build_php_package_list)
+
+    [[ "${#php_packages[@]}" -gt 0 ]] || die "PHP package list is empty."
+
+    log "Installing PHP ${C9_PHP_VERSION} runtime"
+    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${php_packages[@]}"
+}
+
+install_python2_runtime() {
+    local python2_version python2_prefix python2_bin python2_tarball python2_url temp_dir build_jobs
+
+    python2_version="${C9_PYTHON2_VERSION}"
+    python2_prefix="${C9_PYTHON2_PREFIX}"
+    python2_bin="${python2_prefix}/bin/python2.7"
+
+    if [[ -x "${python2_bin}" ]] && "${python2_bin}" - <<'PY' >/dev/null 2>&1
+import sys
+sys.exit(0 if sys.version_info[:2] == (2, 7) else 1)
+PY
+    then
+        log "Python 2.7 already installed at ${python2_prefix}"
+    else
+        python2_tarball="Python-${python2_version}.tgz"
+        python2_url="${C9_PYTHON2_DIST_MIRROR}/${python2_version}/${python2_tarball}"
+        temp_dir="$(mktemp -d)"
+        register_temp_dir "${temp_dir}"
+        register_temp_file "${temp_dir}/${python2_tarball}"
+        build_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+
+        log "Installing Python ${python2_version} runtime"
+        curl -fsSL "${python2_url}" -o "${temp_dir}/${python2_tarball}"
+        tar -xzf "${temp_dir}/${python2_tarball}" -C "${temp_dir}"
+
+        (
+            cd "${temp_dir}/Python-${python2_version}"
+            ./configure --prefix="${python2_prefix}"
+            make -j"${build_jobs}"
+            "${SUDO[@]}" rm -rf "${python2_prefix}"
+            "${SUDO[@]}" make altinstall
+        )
+    fi
+
+    [[ -x "${python2_bin}" ]] || die "Python 2.7 binary missing after install: ${python2_bin}"
+    "${SUDO[@]}" ln -sfn "${python2_bin}" /usr/local/bin/python2
+    "${SUDO[@]}" ln -sfn "${python2_bin}" /usr/local/bin/python2.7
+}
+
+install_python_command_aliases() {
+    local python3_bin
+
+    python3_bin="$(command -v python3 || true)"
+    [[ -n "${python3_bin}" ]] || die "python3 binary not found after package installation."
+
+    "${SUDO[@]}" ln -sfn "${python3_bin}" /usr/local/bin/python
+    "${SUDO[@]}" ln -sfn "${python3_bin}" /usr/local/bin/python3
+}
+
+validate_language_commands() {
+    command -v php >/dev/null 2>&1 || die "php binary not found after package installation."
+    command -v python >/dev/null 2>&1 || die "python binary not found after alias setup."
+    command -v python2 >/dev/null 2>&1 || die "python2 binary not found after Python 2.7 install."
+    command -v python3 >/dev/null 2>&1 || die "python3 binary not found after package installation."
+
+    php -r 'exit((int)(PHP_MAJOR_VERSION !== 8));' >/dev/null 2>&1 \
+        || die "php must point to PHP 8."
+
+    python - <<'PY' >/dev/null 2>&1 || die "python must point to Python 3."
+import sys
+sys.exit(0 if sys.version_info[0] == 3 else 1)
+PY
+
+    python3 - <<'PY' >/dev/null 2>&1 || die "python3 command failed validation."
+import sys
+sys.exit(0 if sys.version_info[0] == 3 else 1)
+PY
+
+    python2 - <<'PY' >/dev/null 2>&1 || die "python2 must point to Python 2.7."
+import sys
+sys.exit(0 if sys.version_info[:2] == (2, 7) else 1)
+PY
 }
 
 normalize_arch() {
@@ -916,6 +1084,10 @@ main() {
     prompt_credentials
     update_packages
     install_base_packages
+    install_php_runtime
+    install_python2_runtime
+    install_python_command_aliases
+    validate_language_commands
     install_node_runtime
     prepare_c9_checkout
     verify_c9_commit
