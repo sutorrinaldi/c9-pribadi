@@ -225,7 +225,18 @@ validate_c9_install() {
         c9
         connect-architect
         frontdoor
+        simple-mime
         treehugger
+        engine.io
+        kaefer
+        smith
+    )
+    local required_plugin_modules=(
+        vfs-child
+        vfs-http-adapter
+        vfs-local
+        vfs-nodefs-adapter
+        vfs-socket
     )
     local module_name
 
@@ -234,12 +245,17 @@ validate_c9_install() {
             || die "Missing module: ${module_name}"
     done
 
+    for module_name in "${required_plugin_modules[@]}"; do
+        [[ -e "${C9_INSTALL_DIR}/plugins/node_modules/${module_name}" ]] \
+            || die "Missing plugin module: ${module_name}"
+    done
+
     [[ -f "${C9_INSTALL_DIR}/node_modules/connect/lib/utils.js" ]] \
         || die "connect/lib/utils.js missing"
 
     (
         cd "${C9_INSTALL_DIR}"
-        node -e "require.resolve('amd-loader'); require.resolve('architect'); require.resolve('connect/lib/utils'); require('./server.js');"
+        node -e "require.resolve('amd-loader'); require.resolve('architect'); require.resolve('connect/lib/utils'); require.resolve('simple-mime'); require.resolve('engine.io'); require.resolve('kaefer'); require.resolve('smith'); require.resolve('./plugins/node_modules/vfs-child'); require.resolve('./plugins/node_modules/vfs-local'); require.resolve('./plugins/node_modules/vfs-socket'); require('./server.js');"
     )
 }
 
@@ -279,6 +295,71 @@ install_terminal_components() {
 validate_terminal_components() {
     [[ -x "${C9_SETTING_DIR}/bin/tmux" ]] \
         || die "Missing tmux binary link: ${C9_SETTING_DIR}/bin/tmux"
+}
+
+validate_workspace_backend() {
+    log "Validating Cloud9 workspace backend"
+    "${SUDO[@]}" env \
+        HOME="${C9_RUNTIME_HOME}" \
+        SHELL="${C9_RUNTIME_SHELL}" \
+        PATH="${C9_SETTING_DIR}/bin:${C9_SETTING_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin" \
+        node <<EOF
+const installDir = ${C9_INSTALL_DIR@Q};
+const workspaceDir = ${C9_WORKSPACE_DIR@Q};
+const settingDir = ${C9_SETTING_DIR@Q};
+
+process.chdir(installDir);
+
+const Parent = require("./plugins/node_modules/vfs-child").Parent;
+const parent = new Parent({
+    root: "/",
+    metapath: "/.c9/metadata",
+    wsmetapath: "/.c9/metadata/workspace",
+    local: false,
+    readOnly: false,
+    debug: false,
+    homeDir: process.env.HOME,
+    projectDir: workspaceDir,
+    nakBin: settingDir + "/node_modules/.bin/nak",
+    nodeBin: [process.execPath],
+    tmuxBin: settingDir + "/bin/tmux",
+    bashBin: process.env.SHELL || "bash",
+    defaultEnv: Object.assign({}, process.env)
+});
+
+const timeout = setTimeout(() => {
+    console.error("Workspace backend smoke test timed out");
+    process.exit(1);
+}, 10000);
+
+function fail(err) {
+    clearTimeout(timeout);
+    console.error(err && err.stack ? err.stack : err);
+    process.exit(1);
+}
+
+parent.connect((err, vfs) => {
+    if (err)
+        return fail(err);
+
+    vfs.readdir("/", { encoding: null }, (err, meta) => {
+        if (err)
+            return fail(err);
+
+        const stream = meta && meta.stream;
+        if (!stream)
+            return fail(new Error("Workspace backend returned no directory stream"));
+
+        stream.on("data", function() {});
+        stream.on("error", fail);
+        stream.on("end", () => {
+            clearTimeout(timeout);
+            parent.disconnect();
+            process.exit(0);
+        });
+    });
+});
+EOF
 }
 
 install_user_components() {
@@ -396,6 +477,7 @@ main() {
     validate_terminal_components
     install_user_components
     validate_user_components
+    validate_workspace_backend
     create_launcher
     create_systemd_service
     print_summary
