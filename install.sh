@@ -37,6 +37,7 @@ C9_PORT="${C9_PORT:-8181}"
 C9_LAUNCHER_PATH="${C9_LAUNCHER_PATH:-/usr/local/bin/c9-pribadi-server}"
 C9_SETTING_DIR="${C9_SETTING_DIR:-${C9_RUNTIME_HOME}/.c9}"
 C9_NODE_LINK_DIR="${C9_NODE_LINK_DIR:-${C9_SETTING_DIR}/node/bin}"
+C9_RUNTIME_PATH_FILE="${C9_RUNTIME_PATH_FILE:-${C9_RUNTIME_HOME}/.c9-runtime-path.sh}"
 C9_PTY_PACKAGE_NAME="${C9_PTY_PACKAGE_NAME:-node-pty-prebuilt-multiarch}"
 C9_PTY_PACKAGE_VERSION="${C9_PTY_PACKAGE_VERSION:-0.10.1-pre.5}"
 C9_PYTHON3_APT_PACKAGES="${C9_PYTHON3_APT_PACKAGES:-python3 python3-dev python3-pip python3-venv}"
@@ -125,6 +126,10 @@ run_with_timeout() {
     else
         "$@"
     fi
+}
+
+build_runtime_path() {
+    printf '%s\n' "${C9_RUNTIME_HOME}/.local/bin:${C9_SETTING_DIR}/bin:${C9_SETTING_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"
 }
 
 require_ubuntu() {
@@ -946,6 +951,43 @@ ensure_runtime_user() {
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_INSTALL_DIR}/build"
 }
 
+configure_runtime_shell_path() {
+    local runtime_path profile_file bashrc_file source_line shell_file
+
+    runtime_path="$(build_runtime_path)"
+    profile_file="${C9_RUNTIME_HOME}/.profile"
+    bashrc_file="${C9_RUNTIME_HOME}/.bashrc"
+    source_line="[ -f \"${C9_RUNTIME_PATH_FILE}\" ] && . \"${C9_RUNTIME_PATH_FILE}\""
+
+    log "Configuring runtime user PATH"
+    "${SUDO[@]}" mkdir -p "${C9_RUNTIME_HOME}/.local/bin"
+    "${SUDO[@]}" tee "${C9_RUNTIME_PATH_FILE}" >/dev/null <<EOF
+export PATH='${runtime_path}'
+EOF
+
+    for shell_file in "${profile_file}" "${bashrc_file}"; do
+        if ! "${SUDO[@]}" test -f "${shell_file}"; then
+            "${SUDO[@]}" tee "${shell_file}" >/dev/null <<'EOF'
+# Managed by c9-pribadi installer
+EOF
+        fi
+
+        if ! "${SUDO[@]}" grep -Fqx "${source_line}" "${shell_file}"; then
+            "${SUDO[@]}" tee -a "${shell_file}" >/dev/null <<EOF
+
+# Added by c9-pribadi installer
+${source_line}
+EOF
+        fi
+    done
+
+    "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_RUNTIME_HOME}/.local"
+    "${SUDO[@]}" chown "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" \
+        "${C9_RUNTIME_PATH_FILE}" \
+        "${profile_file}" \
+        "${bashrc_file}"
+}
+
 repair_workspace_settings() {
     log "Repairing Cloud9 workspace state"
     "${SUDO[@]}" mkdir -p "${C9_WORKSPACE_DIR}/.c9"
@@ -1017,27 +1059,33 @@ validate_terminal_components() {
 }
 
 run_as_runtime_user() {
+    local runtime_path
+    runtime_path="$(build_runtime_path)"
+
     if [ "${#SUDO[@]}" -gt 0 ]; then
         "${SUDO[@]}" -u "${C9_RUNTIME_USER}" env \
             HOME="${C9_RUNTIME_HOME}" \
             SHELL="${C9_RUNTIME_SHELL}" \
-            PATH="${C9_SETTING_DIR}/bin:${C9_SETTING_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin" \
+            PATH="${runtime_path}" \
             "$@"
     else
         runuser -u "${C9_RUNTIME_USER}" -- env \
             HOME="${C9_RUNTIME_HOME}" \
             SHELL="${C9_RUNTIME_SHELL}" \
-            PATH="${C9_SETTING_DIR}/bin:${C9_SETTING_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin" \
+            PATH="${runtime_path}" \
             "$@"
     fi
 }
 
 validate_workspace_backend() {
+    local runtime_path
+    runtime_path="$(build_runtime_path)"
+
     log "Validating Cloud9 workspace backend"
     "${SUDO[@]}" env \
         HOME="${C9_RUNTIME_HOME}" \
         SHELL="${C9_RUNTIME_SHELL}" \
-        PATH="${C9_SETTING_DIR}/bin:${C9_SETTING_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin" \
+        PATH="${runtime_path}" \
         node <<EOF
 const installDir = ${C9_INSTALL_DIR@Q};
 const workspaceDir = ${C9_WORKSPACE_DIR@Q};
@@ -1243,7 +1291,7 @@ escape_single_quotes() {
 }
 
 create_launcher() {
-    local esc_user esc_pass esc_listen esc_port esc_home esc_work esc_install esc_setting esc_shell
+    local esc_user esc_pass esc_listen esc_port esc_home esc_work esc_install esc_setting esc_shell esc_path
     esc_user="$(escape_single_quotes "${AUTH_USER}")"
     esc_pass="$(escape_single_quotes "${AUTH_PASS}")"
     esc_listen="$(escape_single_quotes "${C9_LISTEN}")"
@@ -1253,13 +1301,14 @@ create_launcher() {
     esc_install="$(escape_single_quotes "${C9_INSTALL_DIR}")"
     esc_setting="$(escape_single_quotes "${C9_SETTING_DIR}")"
     esc_shell="$(escape_single_quotes "${C9_RUNTIME_SHELL}")"
+    esc_path="$(escape_single_quotes "$(build_runtime_path)")"
 
     "${SUDO[@]}" tee "${C9_LAUNCHER_PATH}" >/dev/null <<EOF
 #!/usr/bin/env bash
 set -Eeuo pipefail
 export HOME='${esc_home}'
 export SHELL='${esc_shell}'
-export PATH='${esc_setting}/bin:${esc_setting}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin'
+export PATH='${esc_path}'
 cd '${esc_install}'
 exec /usr/local/bin/node '${esc_install}/server.js' \\
     --listen '${esc_listen}' \\
@@ -1272,6 +1321,9 @@ EOF
 }
 
 create_systemd_service() {
+    local runtime_path
+    runtime_path="$(build_runtime_path)"
+
     "${SUDO[@]}" tee "/etc/systemd/system/${C9_SERVICE_NAME}.service" >/dev/null <<EOF
 [Unit]
 Description=Cloud9 Pribadi Server
@@ -1287,6 +1339,7 @@ Restart=always
 RestartSec=3
 Environment=HOME=${C9_RUNTIME_HOME}
 Environment=SHELL=${C9_RUNTIME_SHELL}
+Environment=PATH=${runtime_path}
 
 [Install]
 WantedBy=multi-user.target
@@ -1350,6 +1403,7 @@ main() {
     validate_c9_patches
     validate_c9_install
     ensure_runtime_user
+    configure_runtime_shell_path
     repair_workspace_settings
     install_terminal_components
     validate_terminal_components

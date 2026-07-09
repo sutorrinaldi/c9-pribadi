@@ -26,6 +26,7 @@ Setelah install selesai:
 - `pip2` permanen diarahkan ke Python 2.7
 - `python2` permanen diarahkan ke `Python 2.7`
 - `python` dan `python3` permanen diarahkan ke `Python 3`
+- `~/.local/bin` otomatis masuk ke PATH user Cloud9, jadi hasil install `pip --user`, `pip2 --user`, dan script user lain langsung bisa dipanggil
 - `node`, `npm`, dan `npx` langsung tersedia setelah install
 
 ## Dukungan
@@ -90,6 +91,12 @@ Command runtime setelah install:
 - `npm install`
 - `npx nama-tool`
 - `redis-cli ping`
+
+Catatan Python 3 di Ubuntu modern:
+
+- `pip install` global bisa ditolak oleh proteksi `PEP 668`
+- kalau mau install ke user, pakai `pip install --user --break-system-packages nama-paket`
+- script hasil install user akan otomatis terbaca karena `~/.local/bin` sudah dimasukkan ke PATH oleh installer
 
 ## Popup installer
 
