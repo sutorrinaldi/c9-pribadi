@@ -349,10 +349,12 @@ repair_c9_install() {
 }
 
 validate_c9_patches() {
-    local localfs_path restful_path tree_path
+    local localfs_path restful_path tree_path default_config_path standalone_config_path
     localfs_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-local/localfs.js"
     restful_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-http-adapter/restful.js"
     tree_path="${C9_INSTALL_DIR}/plugins/c9.ide.tree/tree.js"
+    default_config_path="${C9_INSTALL_DIR}/configs/ide/default.js"
+    standalone_config_path="${C9_INSTALL_DIR}/configs/standalone.js"
 
     "${SUDO[@]}" grep -q "node-pty-prebuilt-multiarch" "${localfs_path}" \
         || die "Cloud9 PTY loader patch missing after install repair."
@@ -360,8 +362,12 @@ validate_c9_patches() {
         || die "Cloud9 local VFS stream patch missing after install repair."
     "${SUDO[@]}" grep -q "input && input.readable === false && input.body != null" "${restful_path}" \
         || die "Cloud9 REST VFS stream patch missing after install repair."
-    "${SUDO[@]}" grep -q "selectedPathParts.length" "${tree_path}" \
+    "${SUDO[@]}" grep -q "Array.isArray(paths) || !paths.length" "${tree_path}" \
         || die "Cloud9 workspace bootstrap patch missing after install repair."
+    "${SUDO[@]}" grep -q 'installSelfCheck: options.installSelfCheck !== false' "${default_config_path}" \
+        || die "Cloud9 IDE self-check patch missing after install repair."
+    "${SUDO[@]}" grep -q 'config.installSelfCheck = false;' "${standalone_config_path}" \
+        || die "Cloud9 standalone self-check patch missing after install repair."
 }
 
 validate_c9_install() {

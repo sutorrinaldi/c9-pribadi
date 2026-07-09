@@ -150,6 +150,8 @@ Selain itu installer terbaru juga:
 
 Kalau sebelumnya Anda masih melihat toast `Failed to write to 'state.settings'. options.stream must be readable.`, itu biasanya karena versi installer lama memasang patch terlalu awal lalu patch tersebut tertimpa lagi oleh `restore_vendored_modules`.
 
+Versi terbaru juga memperbaiki validator internal installer, jadi patch workspace bootstrap tidak lagi salah dianggap hilang padahal file sudah berhasil dipatch.
+
 ## Troubleshooting
 
 Kalau ingin melihat log terbaru service:
