@@ -350,7 +350,7 @@ PY
 }
 
 install_python2_pip_runtime() {
-    local python2_bin python2_pip_bin temp_dir get_pip_path
+    local python2_bin python2_pip_bin temp_dir get_pip_path pip_health_ok=1
 
     if is_enabled "${C9_INSTALL_PYTHON2_PIP}"; then
         :
@@ -363,14 +363,25 @@ install_python2_pip_runtime() {
     python2_bin="${C9_PYTHON2_PREFIX}/bin/python2.7"
     [[ -x "${python2_bin}" ]] || die "Python 2.7 binary missing before pip install: ${python2_bin}"
 
-    if ! "${python2_bin}" -m pip --version >/dev/null 2>&1; then
-        log "Installing pip for Python 2.7"
+    log "Checking pip for Python 2.7"
+    if command -v timeout >/dev/null 2>&1; then
+        if timeout 10s "${python2_bin}" -m pip --version >/dev/null 2>&1; then
+            pip_health_ok=0
+        fi
+    else
+        if "${python2_bin}" -m pip --version >/dev/null 2>&1; then
+            pip_health_ok=0
+        fi
+    fi
+
+    if (( pip_health_ok != 0 )); then
+        log "Repairing pip for Python 2.7"
         temp_dir="$(mktemp -d)"
         register_temp_dir "${temp_dir}"
         get_pip_path="${temp_dir}/get-pip.py"
         register_temp_file "${get_pip_path}"
         curl -fsSL "${C9_PYTHON2_GET_PIP_URL}" -o "${get_pip_path}"
-        "${SUDO[@]}" "${python2_bin}" "${get_pip_path}" "pip<21" "setuptools<45" "wheel<1"
+        "${SUDO[@]}" "${python2_bin}" "${get_pip_path}" --force-reinstall "pip<21" "setuptools<45" "wheel<1"
     fi
 
     python2_pip_bin="${C9_PYTHON2_PREFIX}/bin/pip2.7"
@@ -381,6 +392,14 @@ install_python2_pip_runtime() {
     [[ -x "${python2_pip_bin}" ]] || die "Python 2 pip binary missing after install."
     "${SUDO[@]}" ln -sfn "${python2_pip_bin}" /usr/local/bin/pip2
     "${SUDO[@]}" ln -sfn "${python2_pip_bin}" /usr/local/bin/pip2.7
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 10s "${python2_bin}" -m pip --version >/dev/null 2>&1 \
+            || die "Python 2 pip validation timed out or failed after repair."
+    else
+        "${python2_bin}" -m pip --version >/dev/null 2>&1 \
+            || die "Python 2 pip validation failed after repair."
+    fi
 }
 
 install_python_command_aliases() {
