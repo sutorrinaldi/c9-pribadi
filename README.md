@@ -50,6 +50,20 @@ Saat installer berjalan, CLI akan menanyakan:
 
 Setelah selesai, buka URL yang ditampilkan installer lalu login.
 
+## Popup installer
+
+Kalau install memakai versi `install.sh` terbaru, popup `Cloud9 Installer` untuk `c9.ide.find` seharusnya tidak muncul lagi saat login pertama.
+
+Penyebab popup itu di Cloud9 lama adalah plugin `Find in Files` mencoba memasang `nak` ke `~/.c9` saat pertama dipakai.
+
+Installer ini sudah menangani hal itu dengan:
+
+- memasang `nak` saat proses install
+- membuat file status `installed`
+- menjalankan Cloud9 dengan `--setting-path`
+
+Kalau popup masih muncul, biasanya berarti VPS masih memakai hasil install lama atau service belum memakai launcher terbaru.
+
 ## Perintah service
 
 Lihat status:
