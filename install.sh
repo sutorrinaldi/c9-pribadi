@@ -14,6 +14,7 @@ C9_SERVICE_NAME="${C9_SERVICE_NAME:-c9-pribadi}"
 C9_RUNTIME_USER="${C9_RUNTIME_USER:-c9pribadi}"
 C9_RUNTIME_GROUP="${C9_RUNTIME_GROUP:-c9pribadi}"
 C9_RUNTIME_HOME="${C9_RUNTIME_HOME:-/var/lib/c9-pribadi}"
+C9_RUNTIME_SHELL="${C9_RUNTIME_SHELL:-/bin/bash}"
 C9_WORKSPACE_DIR="${C9_WORKSPACE_DIR:-/var/lib/c9-pribadi/workspace}"
 C9_LISTEN="${C9_LISTEN:-0.0.0.0}"
 C9_PORT="${C9_PORT:-8181}"
@@ -78,6 +79,7 @@ install_base_packages() {
         lsb-release \
         python3 \
         tar \
+        tmux \
         xz-utils
 }
 
@@ -252,14 +254,31 @@ ensure_runtime_user() {
             --gid "${C9_RUNTIME_GROUP}" \
             --home-dir "${C9_RUNTIME_HOME}" \
             --create-home \
-            --shell /usr/sbin/nologin \
+            --shell "${C9_RUNTIME_SHELL}" \
             "${C9_RUNTIME_USER}"
+    else
+        "${SUDO[@]}" usermod --shell "${C9_RUNTIME_SHELL}" "${C9_RUNTIME_USER}"
     fi
 
-    "${SUDO[@]}" mkdir -p "${C9_RUNTIME_HOME}" "${C9_WORKSPACE_DIR}" "${C9_SETTING_DIR}"
+    "${SUDO[@]}" mkdir -p "${C9_RUNTIME_HOME}" "${C9_WORKSPACE_DIR}" "${C9_SETTING_DIR}" "${C9_SETTING_DIR}/bin"
     "${SUDO[@]}" mkdir -p "${C9_INSTALL_DIR}/build"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_RUNTIME_HOME}"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_INSTALL_DIR}/build"
+}
+
+install_terminal_components() {
+    local tmux_path
+    tmux_path="$(command -v tmux || true)"
+    [[ -n "${tmux_path}" ]] || die "tmux binary not found after package installation."
+
+    log "Preparing Cloud9 terminal components"
+    "${SUDO[@]}" ln -sfn "${tmux_path}" "${C9_SETTING_DIR}/bin/tmux"
+    "${SUDO[@]}" chown -h "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_SETTING_DIR}/bin/tmux"
+}
+
+validate_terminal_components() {
+    [[ -x "${C9_SETTING_DIR}/bin/tmux" ]] \
+        || die "Missing tmux binary link: ${C9_SETTING_DIR}/bin/tmux"
 }
 
 install_user_components() {
@@ -292,7 +311,7 @@ escape_single_quotes() {
 }
 
 create_launcher() {
-    local esc_user esc_pass esc_listen esc_port esc_home esc_work esc_install esc_setting
+    local esc_user esc_pass esc_listen esc_port esc_home esc_work esc_install esc_setting esc_shell
     esc_user="$(escape_single_quotes "${AUTH_USER}")"
     esc_pass="$(escape_single_quotes "${AUTH_PASS}")"
     esc_listen="$(escape_single_quotes "${C9_LISTEN}")"
@@ -301,11 +320,14 @@ create_launcher() {
     esc_work="$(escape_single_quotes "${C9_WORKSPACE_DIR}")"
     esc_install="$(escape_single_quotes "${C9_INSTALL_DIR}")"
     esc_setting="$(escape_single_quotes "${C9_SETTING_DIR}")"
+    esc_shell="$(escape_single_quotes "${C9_RUNTIME_SHELL}")"
 
     "${SUDO[@]}" tee "${C9_LAUNCHER_PATH}" >/dev/null <<EOF
 #!/usr/bin/env bash
 set -Eeuo pipefail
 export HOME='${esc_home}'
+export SHELL='${esc_shell}'
+export PATH='${esc_setting}/bin:${esc_setting}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin'
 cd '${esc_install}'
 exec /usr/local/bin/node '${esc_install}/server.js' \\
     --listen '${esc_listen}' \\
@@ -332,6 +354,7 @@ ExecStart=${C9_LAUNCHER_PATH}
 Restart=always
 RestartSec=3
 Environment=HOME=${C9_RUNTIME_HOME}
+Environment=SHELL=${C9_RUNTIME_SHELL}
 
 [Install]
 WantedBy=multi-user.target
@@ -369,6 +392,8 @@ main() {
     repair_c9_install
     validate_c9_install
     ensure_runtime_user
+    install_terminal_components
+    validate_terminal_components
     install_user_components
     validate_user_components
     create_launcher
