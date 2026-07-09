@@ -116,6 +116,17 @@ is_enabled() {
     esac
 }
 
+run_with_timeout() {
+    local duration="$1"
+    shift
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "${duration}" "$@"
+    else
+        "$@"
+    fi
+}
+
 require_ubuntu() {
     case "${ubuntu_version}" in
         18.04|20.04|22.04|24.04) ;;
@@ -380,13 +391,8 @@ install_python2_pip_runtime() {
     "${SUDO[@]}" ln -sfn "${python2_pip_bin}" /usr/local/bin/pip2
     "${SUDO[@]}" ln -sfn "${python2_pip_bin}" /usr/local/bin/pip2.7
 
-    if command -v timeout >/dev/null 2>&1; then
-        timeout 20s "${python2_bin}" -m pip --version >/dev/null 2>&1 \
-            || die "Python 2 pip validation timed out or failed after install."
-    else
-        "${python2_bin}" -m pip --version >/dev/null 2>&1 \
-            || die "Python 2 pip validation failed after install."
-    fi
+    run_with_timeout 20s "${python2_bin}" -m pip --version >/dev/null 2>&1 \
+        || die "Python 2 pip validation timed out or failed after install."
 }
 
 install_python_command_aliases() {
@@ -433,8 +439,8 @@ import sys
 sys.exit(0 if sys.version_info[0] == 3 else 1)
 PY
 
-    pip --version >/dev/null 2>&1 || die "pip command failed validation."
-    pip3 --version >/dev/null 2>&1 || die "pip3 command failed validation."
+    run_with_timeout 10s pip --version >/dev/null 2>&1 || die "pip command failed validation."
+    run_with_timeout 10s pip3 --version >/dev/null 2>&1 || die "pip3 command failed validation."
 
     python2 - <<'PY' >/dev/null 2>&1 || die "python2 must point to Python 2.7."
 import sys
@@ -443,14 +449,14 @@ PY
 
     if is_enabled "${C9_INSTALL_PYTHON2_PIP}"; then
         command -v pip2 >/dev/null 2>&1 || die "pip2 binary not found after Python 2 pip install."
-        pip2 --version >/dev/null 2>&1 || die "pip2 command failed validation."
+        run_with_timeout 10s pip2 --version >/dev/null 2>&1 || die "pip2 command failed validation."
     elif [[ $? -ne 1 ]]; then
         die "C9_INSTALL_PYTHON2_PIP must be 1/0, true/false, or yes/no."
     fi
 
     if is_enabled "${C9_INSTALL_COMPOSER}"; then
         command -v composer >/dev/null 2>&1 || die "composer binary not found after package installation."
-        composer --version >/dev/null 2>&1 || die "composer command failed after package installation."
+        run_with_timeout 10s composer --version >/dev/null 2>&1 || die "composer command failed after package installation."
     elif [[ $? -ne 1 ]]; then
         die "C9_INSTALL_COMPOSER must be 1/0, true/false, or yes/no."
     fi
