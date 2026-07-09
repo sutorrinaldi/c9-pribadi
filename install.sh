@@ -348,6 +348,22 @@ repair_c9_install() {
     fi
 }
 
+validate_c9_patches() {
+    local localfs_path restful_path tree_path
+    localfs_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-local/localfs.js"
+    restful_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-http-adapter/restful.js"
+    tree_path="${C9_INSTALL_DIR}/plugins/c9.ide.tree/tree.js"
+
+    "${SUDO[@]}" grep -q "node-pty-prebuilt-multiarch" "${localfs_path}" \
+        || die "Cloud9 PTY loader patch missing after install repair."
+    "${SUDO[@]}" grep -q "options.stream.readable === false" "${localfs_path}" \
+        || die "Cloud9 local VFS stream patch missing after install repair."
+    "${SUDO[@]}" grep -q "input && input.readable === false && input.body != null" "${restful_path}" \
+        || die "Cloud9 REST VFS stream patch missing after install repair."
+    "${SUDO[@]}" grep -q "selectedPathParts.length" "${tree_path}" \
+        || die "Cloud9 workspace bootstrap patch missing after install repair."
+}
+
 validate_c9_install() {
     local required_modules=(
         amd-loader
@@ -771,12 +787,13 @@ main() {
     install_node_runtime
     prepare_c9_checkout
     verify_c9_commit
-    patch_c9_pty_loader
-    patch_c9_workspace_bootstrap
-    patch_c9_vfs_write_stream
     run_npm_install
     restore_vendored_modules
     repair_c9_install
+    patch_c9_pty_loader
+    patch_c9_workspace_bootstrap
+    patch_c9_vfs_write_stream
+    validate_c9_patches
     validate_c9_install
     ensure_runtime_user
     repair_workspace_settings

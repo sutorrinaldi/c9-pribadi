@@ -146,7 +146,9 @@ Selain itu installer terbaru juga:
 - mem-patch bug tree Cloud9 lama saat `state/projecttree/expanded` kosong
 - memperbaiki atau membuat file `workspace/.c9/state.settings`
 - menjaga root `workspace` tetap bisa dibuka walau state lama sempat korup
-- mem-patch jalur `PUT` VFS supaya penyimpanan `state.settings` dan `project.settings` tetap terbaca sebagai stream
+- mem-patch jalur VFS write `REST` dan `socket` setelah `vendored modules` dipulihkan, jadi toast `Failed to write to 'state.settings'` tidak tertimpa lagi oleh proses repair internal installer
+
+Kalau sebelumnya Anda masih melihat toast `Failed to write to 'state.settings'. options.stream must be readable.`, itu biasanya karena versi installer lama memasang patch terlalu awal lalu patch tersebut tertimpa lagi oleh `restore_vendored_modules`.
 
 ## Troubleshooting
 
