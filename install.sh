@@ -21,6 +21,8 @@ C9_PORT="${C9_PORT:-8181}"
 C9_LAUNCHER_PATH="${C9_LAUNCHER_PATH:-/usr/local/bin/c9-pribadi-server}"
 C9_SETTING_DIR="${C9_SETTING_DIR:-${C9_RUNTIME_HOME}/.c9}"
 C9_NODE_LINK_DIR="${C9_NODE_LINK_DIR:-${C9_SETTING_DIR}/node/bin}"
+C9_PTY_PACKAGE_NAME="${C9_PTY_PACKAGE_NAME:-node-pty-prebuilt-multiarch}"
+C9_PTY_PACKAGE_VERSION="${C9_PTY_PACKAGE_VERSION:-0.10.1-pre.5}"
 
 SUDO=()
 if [ "${EUID}" -ne 0 ]; then
@@ -378,7 +380,19 @@ install_user_components() {
         npm_config_update_notifier=false \
         npm --prefix "${C9_SETTING_DIR}" install --no-package-lock \
         "https://github.com/c9/nak/tarball/c9" \
-        "node-pty-prebuilt@0.7.6"
+        "${C9_PTY_PACKAGE_NAME}@${C9_PTY_PACKAGE_VERSION}"
+
+    "${SUDO[@]}" mkdir -p "${C9_SETTING_DIR}/node_modules/node-pty-prebuilt"
+    "${SUDO[@]}" tee "${C9_SETTING_DIR}/node_modules/node-pty-prebuilt/package.json" >/dev/null <<EOF
+{
+  "name": "node-pty-prebuilt",
+  "private": true,
+  "main": "index.js"
+}
+EOF
+    "${SUDO[@]}" tee "${C9_SETTING_DIR}/node_modules/node-pty-prebuilt/index.js" >/dev/null <<EOF
+module.exports = require("../${C9_PTY_PACKAGE_NAME}");
+EOF
 
     "${SUDO[@]}" tee "${C9_SETTING_DIR}/installed" >/dev/null <<'EOF'
 Cloud9 IDE@1
@@ -395,8 +409,11 @@ validate_user_components() {
         || die "Missing Cloud9 installed manifest: ${C9_SETTING_DIR}/installed"
     [[ -f "${C9_SETTING_DIR}/node_modules/nak/bin/nak" ]] \
         || die "Missing nak binary: ${C9_SETTING_DIR}/node_modules/nak/bin/nak"
-    if [[ ! -d "${C9_SETTING_DIR}/node_modules/node-pty-prebuilt" && ! -d "${C9_SETTING_DIR}/node_modules/pty.js" ]]; then
-        die "Missing PTY module: expected node-pty-prebuilt or pty.js under ${C9_SETTING_DIR}/node_modules"
+    if [[ ! -d "${C9_SETTING_DIR}/node_modules/node-pty-prebuilt" ]]; then
+        die "Missing PTY compatibility module: ${C9_SETTING_DIR}/node_modules/node-pty-prebuilt"
+    fi
+    if [[ ! -d "${C9_SETTING_DIR}/node_modules/${C9_PTY_PACKAGE_NAME}" ]]; then
+        die "Missing PTY runtime module: ${C9_SETTING_DIR}/node_modules/${C9_PTY_PACKAGE_NAME}"
     fi
     "${SUDO[@]}" env \
         HOME="${C9_RUNTIME_HOME}" \
@@ -405,7 +422,7 @@ const path = require("path");
 const root = ${C9_SETTING_DIR@Q};
 const candidates = [
   path.join(root, "node_modules/node-pty-prebuilt"),
-  path.join(root, "node_modules/pty.js")
+  path.join(root, "node_modules/${C9_PTY_PACKAGE_NAME}")
 ];
 
 let loaded = false;

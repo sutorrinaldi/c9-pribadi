@@ -23,6 +23,7 @@ Default yang dipakai:
 - Branch: `master`
 - Commit: `7e1ac98f51b85e8bed401c593774ef73ada3cd07`
 - Node.js default: `14`
+- PTY module: `node-pty-prebuilt-multiarch@0.10.1-pre.5`
 
 ## Cara install
 
@@ -116,6 +117,20 @@ Variabel yang bisa diubah:
 - `C9_SERVICE_NAME`
 - `C9_WORKSPACE_DIR`
 - `C9_SETTING_DIR`
+
+## Reinstall atau update
+
+Kalau sebelumnya install sempat gagal, update script dulu lalu jalankan ulang:
+
+```bash
+cd ~/c9-pribadi
+git fetch origin
+git reset --hard origin/master
+chmod +x install.sh
+sudo ./install.sh
+```
+
+Versi terbaru tidak lagi memakai `node-pty-prebuilt@0.7.6`, karena paket lama itu sering jatuh ke compile source dan gagal di Ubuntu 24.04 saat bertemu `python3.12` + `node-gyp` lama.
 
 ## Catatan
 
