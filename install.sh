@@ -1104,6 +1104,15 @@ install_user_components() {
     register_npm_cache_path "${npm_cache_dir}"
 
     log "Installing Cloud9 user components"
+    "${SUDO[@]}" mkdir -p "${C9_SETTING_DIR}"
+    "${SUDO[@]}" tee "${C9_SETTING_DIR}/package.json" >/dev/null <<EOF
+{
+  "name": "c9-pribadi-user-components",
+  "private": true,
+  "description": "Local Cloud9 user component manifest",
+  "license": "UNLICENSED"
+}
+EOF
     "${SUDO[@]}" env \
         HOME="${C9_RUNTIME_HOME}" \
         npm_config_cache="${npm_cache_dir}" \
@@ -1135,6 +1144,8 @@ EOF
 }
 
 validate_user_components() {
+    [[ -f "${C9_SETTING_DIR}/package.json" ]] \
+        || die "Missing Cloud9 user package manifest: ${C9_SETTING_DIR}/package.json"
     [[ -f "${C9_SETTING_DIR}/installed" ]] \
         || die "Missing Cloud9 installed manifest: ${C9_SETTING_DIR}/installed"
     [[ -f "${C9_SETTING_DIR}/node_modules/nak/bin/nak" ]] \
