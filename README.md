@@ -138,6 +138,21 @@ Installer terbaru juga mem-patch loader PTY bawaan Cloud9 agar:
 - menampilkan error PTY asli di `journalctl` kalau native binary gagal di-load
 - menjalankan smoke test PTY saat install, jadi install gagal lebih awal kalau backend terminal memang belum sehat
 
+## Troubleshooting
+
+Kalau ingin melihat log terbaru service:
+
+```bash
+sudo journalctl -u c9-pribadi --since "5 minutes ago" -l --no-pager
+```
+
+Atau setelah restart:
+
+```bash
+sudo systemctl restart c9-pribadi
+sudo journalctl -u c9-pribadi -n 80 -l --no-pager
+```
+
 ## Catatan
 
 Service dibuat dengan `systemd`, jadi menutup SSH atau keluar dari VPS tidak akan mematikan Cloud9.
