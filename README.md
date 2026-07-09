@@ -2,6 +2,8 @@
 
 Installer sederhana untuk Cloud9 pribadi di Ubuntu.
 
+Installer ini tidak menjalankan `apt upgrade -y`. Ia hanya melakukan `apt-get update` lalu memasang paket yang dibutuhkan, supaya lebih aman untuk VPS produksi dan tidak memicu upgrade sistem penuh saat instalasi.
+
 Setelah install selesai:
 
 - Cloud9 jalan sebagai service `systemd`
@@ -12,6 +14,8 @@ Setelah install selesai:
 - state workspace awal diperbaiki otomatis, jadi tree `workspace` tidak macet loading karena `expanded=[]`
 - self-check installer GUI bawaan Cloud9 dimatikan untuk mode personal ini, supaya koneksi awal VFS tidak menggantung
 - kompatibilitas VFS write diperbaiki, jadi toast `Failed to write to 'state.settings'` tidak muncul lagi di Node/Ubuntu modern
+- jika instalasi gagal di tengah jalan, installer membersihkan temporary directory, tarball Node.js, dan cache npm yang dibuat selama proses install
+- setelah `systemctl enable --now`, installer langsung memverifikasi service aktif; jika gagal start, log `journalctl` terakhir akan ditampilkan lalu install dihentikan
 
 ## Dukungan
 

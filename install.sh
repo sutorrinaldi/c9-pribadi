@@ -31,6 +31,9 @@ fi
 
 AUTH_USER=""
 AUTH_PASS=""
+TEMP_DIRS=()
+TEMP_FILES=()
+NPM_CACHE_PATHS=()
 
 log() {
     printf '[c9-personal] %s\n' "$*"
@@ -40,6 +43,48 @@ die() {
     printf '[c9-personal] ERROR: %s\n' "$*" >&2
     exit 1
 }
+
+register_temp_dir() {
+    TEMP_DIRS+=("$1")
+}
+
+register_temp_file() {
+    TEMP_FILES+=("$1")
+}
+
+register_npm_cache_path() {
+    NPM_CACHE_PATHS+=("$1")
+}
+
+cleanup_on_exit() {
+    local exit_code=$?
+    local path
+
+    trap - EXIT
+
+    if (( exit_code != 0 )); then
+        log "Installation failed. Cleaning temporary files and npm caches"
+
+        for path in "${TEMP_FILES[@]}"; do
+            [[ -n "${path}" ]] || continue
+            "${SUDO[@]}" rm -f "${path}" || true
+        done
+
+        for path in "${TEMP_DIRS[@]}"; do
+            [[ -n "${path}" ]] || continue
+            "${SUDO[@]}" rm -rf "${path}" || true
+        done
+
+        for path in "${NPM_CACHE_PATHS[@]}"; do
+            [[ -n "${path}" ]] || continue
+            "${SUDO[@]}" rm -rf "${path}" || true
+        done
+    fi
+
+    exit "${exit_code}"
+}
+
+trap cleanup_on_exit EXIT
 
 require_ubuntu() {
     case "${ubuntu_version}" in
@@ -70,7 +115,6 @@ prompt_credentials() {
 
 update_packages() {
     "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get update -y
-    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 }
 
 install_base_packages() {
@@ -132,6 +176,8 @@ install_node_runtime() {
     node_tarball="node-v${node_version}-linux-${node_arch}.tar.xz"
     node_url="${C9_NODE_DIST_MIRROR}/v${node_version}/${node_tarball}"
     temp_dir="$(mktemp -d)"
+    register_temp_dir "${temp_dir}"
+    register_temp_file "${temp_dir}/${node_tarball}"
 
     log "Installing Node.js v${node_version}"
     curl -fsSL "${node_url}" -o "${temp_dir}/${node_tarball}"
@@ -293,14 +339,17 @@ PY
 
 run_npm_install() {
     local npm_major legacy_flag=()
+    local npm_cache_dir
     npm_major="$(npm --version | cut -d. -f1)"
     if [[ "${npm_major}" =~ ^[0-9]+$ ]] && (( npm_major >= 7 )); then
         legacy_flag+=(--legacy-peer-deps)
     fi
+    npm_cache_dir="${C9_INSTALL_DIR}/.npm-cache"
+    register_npm_cache_path "${npm_cache_dir}"
 
     log "Installing Cloud9 registry dependencies"
     "${SUDO[@]}" env \
-        npm_config_cache="${C9_INSTALL_DIR}/.npm-cache" \
+        npm_config_cache="${npm_cache_dir}" \
         npm_config_update_notifier=false \
         npm --prefix "${C9_INSTALL_DIR}" install --production --no-package-lock "${legacy_flag[@]}"
 }
@@ -588,10 +637,14 @@ EOF
 }
 
 install_user_components() {
+    local npm_cache_dir
+    npm_cache_dir="${C9_SETTING_DIR}/.npm-cache"
+    register_npm_cache_path "${npm_cache_dir}"
+
     log "Installing Cloud9 user components"
     "${SUDO[@]}" env \
         HOME="${C9_RUNTIME_HOME}" \
-        npm_config_cache="${C9_SETTING_DIR}/.npm-cache" \
+        npm_config_cache="${npm_cache_dir}" \
         npm_config_update_notifier=false \
         npm --prefix "${C9_SETTING_DIR}" install --no-package-lock \
         "https://github.com/c9/nak/tarball/c9" \
@@ -767,7 +820,19 @@ WantedBy=multi-user.target
 EOF
 
     "${SUDO[@]}" systemctl daemon-reload
-    "${SUDO[@]}" systemctl enable --now "${C9_SERVICE_NAME}.service"
+    if ! "${SUDO[@]}" systemctl enable --now "${C9_SERVICE_NAME}.service"; then
+        "${SUDO[@]}" journalctl -u "${C9_SERVICE_NAME}.service" -n 50 -l --no-pager || true
+        die "Failed to enable and start ${C9_SERVICE_NAME}.service"
+    fi
+}
+
+validate_systemd_service() {
+    local service_status
+    service_status="$("${SUDO[@]}" systemctl is-active "${C9_SERVICE_NAME}.service" 2>/dev/null || true)"
+    if [[ "${service_status}" != "active" ]]; then
+        "${SUDO[@]}" journalctl -u "${C9_SERVICE_NAME}.service" -n 50 -l --no-pager || true
+        die "Service ${C9_SERVICE_NAME}.service is not active after install (status: ${service_status:-unknown})"
+    fi
 }
 
 print_summary() {
@@ -811,6 +876,7 @@ main() {
     validate_workspace_backend
     create_launcher
     create_systemd_service
+    validate_systemd_service
     print_summary
 }
 
