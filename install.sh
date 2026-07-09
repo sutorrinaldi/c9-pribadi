@@ -337,6 +337,49 @@ PY
     fi
 }
 
+patch_c9_upload_drop_behavior() {
+    local upload_path
+    upload_path="${C9_INSTALL_DIR}/plugins/c9.ide.upload/upload.js"
+
+    [[ -f "${upload_path}" ]] || die "Missing upload plugin: ${upload_path}"
+
+    log "Patching Cloud9 drag-and-drop upload behavior"
+
+    if ! "${SUDO[@]}" python3 - "${upload_path}" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+
+old_signature = """        function uploadBatch(batch, targetPath) {\n"""
+new_signature = """        function uploadBatch(batch, targetPath, sourceType) {\n"""
+if old_signature not in text and new_signature not in text:
+    raise SystemExit("Unable to patch uploadBatch signature")
+if old_signature in text:
+    text = text.replace(old_signature, new_signature, 1)
+
+old_call = """                uploadBatch(batch, targetPath.path || targetPath);\n"""
+new_call = """                uploadBatch(batch, targetPath.path || targetPath, type);\n"""
+if old_call not in text and new_call not in text:
+    raise SystemExit("Unable to patch upload drop caller")
+if old_call in text:
+    text = text.replace(old_call, new_call, 1)
+
+old_block = """            var targetFolder;\n            if (targetPath && typeof targetPath === \"object\") {\n                if (!window.FileReader)\n                    return alert(\n                        \"Unable to open files\",\n                        \"Drop files on the tree to upload\",\n                        \"\"\n                    );\n                if (batch.files.length > MAX_OPEN_COUNT)\n                    return alert(\n                        \"Maximum open count exceeded (\" + batch.files.length + \")\",\n                        \"Drop files on the tree to upload\",\n                        \"\"\n                    );\n                    \n                var hasImage = false;\n                batch.files.forEach(function(file, i) {\n                    if (/image/i.test(file.type))\n                        return hasImage = true;\n                    var reader = new FileReader();\n                    reader.onload = function() {\n                        tabManager.open({\n                            path: \"/\" + file.name, \n                            value: reader.result, \n                            document: { meta: { newfile: true }},\n                            active: i === 0,\n                            pane: targetPath\n                        }, function(err, tab) {});\n                    };\n                    reader.readAsText(file);\n                });\n                \n                if (hasImage)\n                    alert(\n                        \"Can't open an image\",\n                        \"Drop files on the tree to upload\",\n                        \"\"\n                    );\n                    \n                return;\n            }\n"""
+new_block = """            var targetFolder;\n            if (targetPath && typeof targetPath === \"object\") {\n                var shouldUploadToTree = !window.FileReader\n                    || sourceType === \"tree\"\n                    || batch.files.length > MAX_OPEN_COUNT;\n\n                if (!shouldUploadToTree) {\n                    var hasImage = false;\n                    batch.files.forEach(function(file, i) {\n                        if (/image/i.test(file.type)) {\n                            hasImage = true;\n                            return;\n                        }\n                        var reader = new FileReader();\n                        reader.onload = function() {\n                            tabManager.open({\n                                path: \"/\" + file.name, \n                                value: reader.result, \n                                document: { meta: { newfile: true }},\n                                active: i === 0,\n                                pane: targetPath\n                            }, function(err, tab) {});\n                        };\n                        reader.readAsText(file);\n                    });\n\n                    if (!hasImage)\n                        return;\n                }\n\n                targetFolder = getTargetFolder();\n                targetPath = targetFolder.path;\n            }\n"""
+if old_block not in text and new_block not in text:
+    raise SystemExit("Unable to patch upload drag-and-drop behavior")
+if old_block in text:
+    text = text.replace(old_block, new_block, 1)
+
+path.write_text(text)
+PY
+    then
+        die "Failed to patch Cloud9 drag-and-drop upload behavior."
+    fi
+}
+
 run_npm_install() {
     local npm_major legacy_flag=()
     local npm_cache_dir
@@ -398,12 +441,13 @@ repair_c9_install() {
 }
 
 validate_c9_patches() {
-    local localfs_path restful_path tree_path default_config_path standalone_config_path
+    local localfs_path restful_path tree_path default_config_path standalone_config_path upload_path
     localfs_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-local/localfs.js"
     restful_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-http-adapter/restful.js"
     tree_path="${C9_INSTALL_DIR}/plugins/c9.ide.tree/tree.js"
     default_config_path="${C9_INSTALL_DIR}/configs/ide/default.js"
     standalone_config_path="${C9_INSTALL_DIR}/configs/standalone.js"
+    upload_path="${C9_INSTALL_DIR}/plugins/c9.ide.upload/upload.js"
 
     "${SUDO[@]}" grep -q "node-pty-prebuilt-multiarch" "${localfs_path}" \
         || die "Cloud9 PTY loader patch missing after install repair."
@@ -417,6 +461,8 @@ validate_c9_patches() {
         || die "Cloud9 IDE self-check patch missing after install repair."
     "${SUDO[@]}" grep -q 'config.installSelfCheck = false;' "${standalone_config_path}" \
         || die "Cloud9 standalone self-check patch missing after install repair."
+    "${SUDO[@]}" grep -q 'var shouldUploadToTree = !window.FileReader' "${upload_path}" \
+        || die "Cloud9 drag-and-drop upload patch missing after install repair."
 }
 
 validate_c9_install() {
@@ -864,6 +910,7 @@ main() {
     patch_c9_pty_loader
     patch_c9_workspace_bootstrap
     patch_c9_vfs_write_stream
+    patch_c9_upload_drop_behavior
     validate_c9_patches
     validate_c9_install
     ensure_runtime_user
