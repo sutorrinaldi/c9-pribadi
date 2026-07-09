@@ -160,6 +160,7 @@ install_base_packages() {
         tar
         tmux
         unzip
+        wget
         xz-utils
         zip
     )
@@ -331,7 +332,7 @@ PY
         build_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
 
         log "Installing Python ${python2_version} runtime"
-        curl -fsSL "${python2_url}" -o "${temp_dir}/${python2_tarball}"
+        wget -q -O "${temp_dir}/${python2_tarball}" "${python2_url}"
         tar -xzf "${temp_dir}/${python2_tarball}" -C "${temp_dir}"
 
         (
@@ -364,14 +365,12 @@ install_python2_pip_runtime() {
 
     if ! "${python2_bin}" -m pip --version >/dev/null 2>&1; then
         log "Installing pip for Python 2.7"
-        if ! "${SUDO[@]}" "${python2_bin}" -m ensurepip --default-pip >/dev/null 2>&1; then
-            temp_dir="$(mktemp -d)"
-            register_temp_dir "${temp_dir}"
-            get_pip_path="${temp_dir}/get-pip.py"
-            register_temp_file "${get_pip_path}"
-            curl -fsSL "${C9_PYTHON2_GET_PIP_URL}" -o "${get_pip_path}"
-            "${SUDO[@]}" "${python2_bin}" "${get_pip_path}" "pip<21" "setuptools<45" "wheel<1"
-        fi
+        temp_dir="$(mktemp -d)"
+        register_temp_dir "${temp_dir}"
+        get_pip_path="${temp_dir}/get-pip.py"
+        register_temp_file "${get_pip_path}"
+        curl -fsSL "${C9_PYTHON2_GET_PIP_URL}" -o "${get_pip_path}"
+        "${SUDO[@]}" "${python2_bin}" "${get_pip_path}" "pip<21" "setuptools<45" "wheel<1"
     fi
 
     python2_pip_bin="${C9_PYTHON2_PREFIX}/bin/pip2.7"
