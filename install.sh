@@ -376,7 +376,9 @@ install_user_components() {
         HOME="${C9_RUNTIME_HOME}" \
         npm_config_cache="${C9_SETTING_DIR}/.npm-cache" \
         npm_config_update_notifier=false \
-        npm --prefix "${C9_SETTING_DIR}" install --no-package-lock "https://github.com/c9/nak/tarball/c9"
+        npm --prefix "${C9_SETTING_DIR}" install --no-package-lock \
+        "https://github.com/c9/nak/tarball/c9" \
+        "node-pty-prebuilt@0.7.6"
 
     "${SUDO[@]}" tee "${C9_SETTING_DIR}/installed" >/dev/null <<'EOF'
 Cloud9 IDE@1
@@ -393,6 +395,35 @@ validate_user_components() {
         || die "Missing Cloud9 installed manifest: ${C9_SETTING_DIR}/installed"
     [[ -f "${C9_SETTING_DIR}/node_modules/nak/bin/nak" ]] \
         || die "Missing nak binary: ${C9_SETTING_DIR}/node_modules/nak/bin/nak"
+    if [[ ! -d "${C9_SETTING_DIR}/node_modules/node-pty-prebuilt" && ! -d "${C9_SETTING_DIR}/node_modules/pty.js" ]]; then
+        die "Missing PTY module: expected node-pty-prebuilt or pty.js under ${C9_SETTING_DIR}/node_modules"
+    fi
+    "${SUDO[@]}" env \
+        HOME="${C9_RUNTIME_HOME}" \
+        node <<EOF
+const path = require("path");
+const root = ${C9_SETTING_DIR@Q};
+const candidates = [
+  path.join(root, "node_modules/node-pty-prebuilt"),
+  path.join(root, "node_modules/pty.js")
+];
+
+let loaded = false;
+for (const candidate of candidates) {
+  try {
+    const mod = require(candidate);
+    if (mod) {
+      loaded = true;
+      break;
+    }
+  } catch (err) {}
+}
+
+if (!loaded) {
+  console.error("Unable to load PTY module from " + candidates.join(", "));
+  process.exit(1);
+}
+EOF
 }
 
 escape_single_quotes() {
