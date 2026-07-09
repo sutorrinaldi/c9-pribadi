@@ -136,6 +136,7 @@ Installer terbaru juga mem-patch loader PTY bawaan Cloud9 agar:
 
 - mencoba `node-pty-prebuilt-multiarch` secara langsung
 - menampilkan error PTY asli di `journalctl` kalau native binary gagal di-load
+- menjalankan smoke test PTY saat install, jadi install gagal lebih awal kalau backend terminal memang belum sehat
 
 ## Catatan
 

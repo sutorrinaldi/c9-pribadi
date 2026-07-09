@@ -487,6 +487,56 @@ if (!loaded) {
 EOF
 }
 
+validate_pty_runtime() {
+    log "Validating PTY runtime"
+    run_as_runtime_user \
+        node <<EOF
+const path = require("path");
+const root = ${C9_SETTING_DIR@Q};
+const shell = process.env.SHELL || "/bin/bash";
+const pty = require(path.join(root, "node_modules/node-pty-prebuilt"));
+const marker = "__C9_PTY_OK__";
+const term = pty.spawn(shell, ["-lc", "printf " + marker], {
+  name: "xterm-color",
+  cols: 80,
+  rows: 24,
+  cwd: process.env.HOME,
+  env: Object.assign({}, process.env)
+});
+
+let seen = "";
+let finished = false;
+const timeout = setTimeout(() => fail(new Error("PTY smoke test timed out")), 5000);
+
+function cleanup(code) {
+  if (finished)
+    return;
+  finished = true;
+  clearTimeout(timeout);
+  try { term.kill(); } catch (err) {}
+  process.exit(code);
+}
+
+function fail(err) {
+  console.error(err && (err.stack || err));
+  cleanup(1);
+}
+
+term.on("data", (data) => {
+  seen += data;
+  if (seen.indexOf(marker) !== -1)
+    cleanup(0);
+});
+
+term.on("error", fail);
+term.on("exit", (code, signal) => {
+  if (seen.indexOf(marker) === -1) {
+    fail(new Error("PTY exited before producing expected output. code=" + code + " signal=" + signal + " output=" + JSON.stringify(seen)));
+  }
+});
+EOF
+}
+
 escape_single_quotes() {
     printf '%s' "$1" | sed "s/'/'\\\\''/g"
 }
@@ -578,6 +628,7 @@ main() {
     validate_terminal_components
     install_user_components
     validate_user_components
+    validate_pty_runtime
     validate_workspace_backend
     create_launcher
     create_systemd_service
