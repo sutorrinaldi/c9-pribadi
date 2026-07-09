@@ -310,7 +310,8 @@ const settingDir = ${C9_SETTING_DIR@Q};
 
 process.chdir(installDir);
 
-const Parent = require("./plugins/node_modules/vfs-child").Parent;
+const path = require("path");
+const Parent = require(path.join(installDir, "plugins/node_modules/vfs-child")).Parent;
 const parent = new Parent({
     root: "/",
     metapath: "/.c9/metadata",
