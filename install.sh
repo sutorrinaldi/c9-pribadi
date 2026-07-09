@@ -398,6 +398,8 @@ install_python2_pip_runtime() {
 install_python_command_aliases() {
     local python3_bin pip3_bin
 
+    log "Setting Python 3 command aliases"
+
     if [[ -x /usr/bin/python3 ]]; then
         python3_bin="/usr/bin/python3"
     else
@@ -419,6 +421,8 @@ install_python_command_aliases() {
 }
 
 validate_language_commands() {
+    log "Validating language runtimes"
+
     command -v php >/dev/null 2>&1 || die "php binary not found after package installation."
     command -v python >/dev/null 2>&1 || die "python binary not found after alias setup."
     command -v python2 >/dev/null 2>&1 || die "python2 binary not found after Python 2.7 install."
@@ -463,6 +467,8 @@ PY
 }
 
 validate_optional_runtime_packages() {
+    log "Validating optional runtimes"
+
     if is_enabled "${C9_INSTALL_IMAGEMAGICK}"; then
         command -v magick >/dev/null 2>&1 || command -v convert >/dev/null 2>&1 \
             || die "ImageMagick binary not found after package installation."
@@ -495,6 +501,8 @@ validate_optional_runtime_packages() {
 }
 
 validate_node_commands() {
+    log "Validating Node.js runtime"
+
     command -v node >/dev/null 2>&1 || die "node binary not found after runtime installation."
     command -v npm >/dev/null 2>&1 || die "npm binary not found after runtime installation."
     command -v npx >/dev/null 2>&1 || die "npx binary not found after runtime installation."
@@ -515,6 +523,8 @@ enable_optional_runtime_services() {
 }
 
 validate_optional_runtime_services() {
+    log "Validating optional services"
+
     if is_enabled "${C9_INSTALL_REDIS_SERVER}"; then
         command -v redis-server >/dev/null 2>&1 || die "redis-server binary not found after package installation."
         command -v redis-cli >/dev/null 2>&1 || die "redis-cli binary not found after package installation."
