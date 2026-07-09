@@ -20,6 +20,7 @@ C9_LISTEN="${C9_LISTEN:-0.0.0.0}"
 C9_PORT="${C9_PORT:-8181}"
 C9_LAUNCHER_PATH="${C9_LAUNCHER_PATH:-/usr/local/bin/c9-pribadi-server}"
 C9_SETTING_DIR="${C9_SETTING_DIR:-${C9_RUNTIME_HOME}/.c9}"
+C9_NODE_LINK_DIR="${C9_NODE_LINK_DIR:-${C9_SETTING_DIR}/node/bin}"
 
 SUDO=()
 if [ "${EUID}" -ne 0 ]; then
@@ -276,25 +277,31 @@ ensure_runtime_user() {
         "${SUDO[@]}" usermod --shell "${C9_RUNTIME_SHELL}" "${C9_RUNTIME_USER}"
     fi
 
-    "${SUDO[@]}" mkdir -p "${C9_RUNTIME_HOME}" "${C9_WORKSPACE_DIR}" "${C9_SETTING_DIR}" "${C9_SETTING_DIR}/bin"
+    "${SUDO[@]}" mkdir -p "${C9_RUNTIME_HOME}" "${C9_WORKSPACE_DIR}" "${C9_SETTING_DIR}" "${C9_SETTING_DIR}/bin" "${C9_NODE_LINK_DIR}"
     "${SUDO[@]}" mkdir -p "${C9_INSTALL_DIR}/build"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_RUNTIME_HOME}"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_INSTALL_DIR}/build"
 }
 
 install_terminal_components() {
-    local tmux_path
+    local tmux_path node_path
     tmux_path="$(command -v tmux || true)"
     [[ -n "${tmux_path}" ]] || die "tmux binary not found after package installation."
+    node_path="$(command -v node || true)"
+    [[ -n "${node_path}" ]] || die "node binary not found after runtime installation."
 
     log "Preparing Cloud9 terminal components"
     "${SUDO[@]}" ln -sfn "${tmux_path}" "${C9_SETTING_DIR}/bin/tmux"
+    "${SUDO[@]}" ln -sfn "${node_path}" "${C9_NODE_LINK_DIR}/node"
     "${SUDO[@]}" chown -h "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_SETTING_DIR}/bin/tmux"
+    "${SUDO[@]}" chown -h "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_NODE_LINK_DIR}/node"
 }
 
 validate_terminal_components() {
     [[ -x "${C9_SETTING_DIR}/bin/tmux" ]] \
         || die "Missing tmux binary link: ${C9_SETTING_DIR}/bin/tmux"
+    [[ -x "${C9_NODE_LINK_DIR}/node" ]] \
+        || die "Missing node binary link: ${C9_NODE_LINK_DIR}/node"
 }
 
 validate_workspace_backend() {
