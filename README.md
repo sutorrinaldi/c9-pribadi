@@ -132,6 +132,11 @@ sudo ./install.sh
 
 Versi terbaru tidak lagi memakai `node-pty-prebuilt@0.7.6`, karena paket lama itu sering jatuh ke compile source dan gagal di Ubuntu 24.04 saat bertemu `python3.12` + `node-gyp` lama.
 
+Installer terbaru juga mem-patch loader PTY bawaan Cloud9 agar:
+
+- mencoba `node-pty-prebuilt-multiarch` secara langsung
+- menampilkan error PTY asli di `journalctl` kalau native binary gagal di-load
+
 ## Catatan
 
 Service dibuat dengan `systemd`, jadi menutup SSH atau keluar dari VPS tidak akan mematikan Cloud9.

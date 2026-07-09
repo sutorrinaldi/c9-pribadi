@@ -163,6 +163,30 @@ verify_c9_commit() {
     [[ "${current}" == "${C9_COMMIT}" ]] || die "Unexpected commit: got ${current}, expected ${C9_COMMIT}"
 }
 
+patch_c9_pty_loader() {
+    local localfs_path
+    localfs_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-local/localfs.js"
+    [[ -f "${localfs_path}" ]] || die "Missing localfs loader: ${localfs_path}"
+
+    if "${SUDO[@]}" grep -q "node-pty-prebuilt-multiarch" "${localfs_path}"; then
+        return
+    fi
+
+    log "Patching Cloud9 PTY loader for multiarch runtime support"
+    "${SUDO[@]}" python3 - "${localfs_path}" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+old = """    if (!fsOptions.nopty) {\n        var modulesPath = fsOptions.nodePath || process.env.HOME + \"/.c9/node_modules\";\n        // on darwin trying to load binary for a wrong version crashes the process\n        [modulesPath + \"/node-pty-prebuilt\",\n         modulesPath + \"/pty.js\",\n         \"node-pty-prebuilt\",\n         \"pty.js\"\n        ].some(function(p) {\n            try {\n                pty = require(p);\n                return true;\n            } catch(e) {}\n        });\n        if (!pty)\n            console.warn(\"unable to initialize pty.js:\");\n    }\n"""
+new = """    if (!fsOptions.nopty) {\n        var modulesPath = fsOptions.nodePath || process.env.HOME + \"/.c9/node_modules\";\n        var ptyError;\n        // on darwin trying to load binary for a wrong version crashes the process\n        [modulesPath + \"/node-pty-prebuilt\",\n         modulesPath + \"/node-pty-prebuilt-multiarch\",\n         modulesPath + \"/pty.js\",\n         \"node-pty-prebuilt\",\n         \"node-pty-prebuilt-multiarch\",\n         \"pty.js\"\n        ].some(function(p) {\n            try {\n                pty = require(p);\n                return true;\n            } catch(e) {\n                ptyError = e;\n            }\n        });\n        if (!pty)\n            console.warn(\"unable to initialize pty.js:\", ptyError && (ptyError.stack || ptyError));\n    }\n"""
+if old not in text:
+    raise SystemExit("Unable to patch localfs.js PTY loader block")
+path.write_text(text.replace(old, new, 1))
+PY
+}
+
 run_npm_install() {
     local npm_major legacy_flag=()
     npm_major="$(npm --version | cut -d. -f1)"
@@ -306,6 +330,22 @@ validate_terminal_components() {
         || die "Missing node binary link: ${C9_NODE_LINK_DIR}/node"
 }
 
+run_as_runtime_user() {
+    if [ "${#SUDO[@]}" -gt 0 ]; then
+        "${SUDO[@]}" -u "${C9_RUNTIME_USER}" env \
+            HOME="${C9_RUNTIME_HOME}" \
+            SHELL="${C9_RUNTIME_SHELL}" \
+            PATH="${C9_SETTING_DIR}/bin:${C9_SETTING_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin" \
+            "$@"
+    else
+        runuser -u "${C9_RUNTIME_USER}" -- env \
+            HOME="${C9_RUNTIME_HOME}" \
+            SHELL="${C9_RUNTIME_SHELL}" \
+            PATH="${C9_SETTING_DIR}/bin:${C9_SETTING_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin" \
+            "$@"
+    fi
+}
+
 validate_workspace_backend() {
     log "Validating Cloud9 workspace backend"
     "${SUDO[@]}" env \
@@ -415,8 +455,7 @@ validate_user_components() {
     if [[ ! -d "${C9_SETTING_DIR}/node_modules/${C9_PTY_PACKAGE_NAME}" ]]; then
         die "Missing PTY runtime module: ${C9_SETTING_DIR}/node_modules/${C9_PTY_PACKAGE_NAME}"
     fi
-    "${SUDO[@]}" env \
-        HOME="${C9_RUNTIME_HOME}" \
+    run_as_runtime_user \
         node <<EOF
 const path = require("path");
 const root = ${C9_SETTING_DIR@Q};
@@ -426,6 +465,7 @@ const candidates = [
 ];
 
 let loaded = false;
+let lastError = null;
 for (const candidate of candidates) {
   try {
     const mod = require(candidate);
@@ -433,11 +473,15 @@ for (const candidate of candidates) {
       loaded = true;
       break;
     }
-  } catch (err) {}
+  } catch (err) {
+    lastError = err;
+  }
 }
 
 if (!loaded) {
   console.error("Unable to load PTY module from " + candidates.join(", "));
+  if (lastError)
+    console.error(lastError && (lastError.stack || lastError));
   process.exit(1);
 }
 EOF
@@ -524,6 +568,7 @@ main() {
     install_node_runtime
     prepare_c9_checkout
     verify_c9_commit
+    patch_c9_pty_loader
     run_npm_install
     restore_vendored_modules
     repair_c9_install
