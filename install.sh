@@ -18,6 +18,7 @@ C9_WORKSPACE_DIR="${C9_WORKSPACE_DIR:-/var/lib/c9-pribadi/workspace}"
 C9_LISTEN="${C9_LISTEN:-0.0.0.0}"
 C9_PORT="${C9_PORT:-8181}"
 C9_LAUNCHER_PATH="${C9_LAUNCHER_PATH:-/usr/local/bin/c9-pribadi-server}"
+C9_SETTING_DIR="${C9_SETTING_DIR:-${C9_RUNTIME_HOME}/.c9}"
 
 SUDO=()
 if [ "${EUID}" -ne 0 ]; then
@@ -255,10 +256,35 @@ ensure_runtime_user() {
             "${C9_RUNTIME_USER}"
     fi
 
-    "${SUDO[@]}" mkdir -p "${C9_RUNTIME_HOME}" "${C9_WORKSPACE_DIR}"
+    "${SUDO[@]}" mkdir -p "${C9_RUNTIME_HOME}" "${C9_WORKSPACE_DIR}" "${C9_SETTING_DIR}"
     "${SUDO[@]}" mkdir -p "${C9_INSTALL_DIR}/build"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_RUNTIME_HOME}"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_INSTALL_DIR}/build"
+}
+
+install_user_components() {
+    log "Installing Cloud9 user components"
+    "${SUDO[@]}" env \
+        HOME="${C9_RUNTIME_HOME}" \
+        npm_config_cache="${C9_SETTING_DIR}/.npm-cache" \
+        npm_config_update_notifier=false \
+        npm --prefix "${C9_SETTING_DIR}" install --no-package-lock "https://github.com/c9/nak/tarball/c9"
+
+    "${SUDO[@]}" tee "${C9_SETTING_DIR}/installed" >/dev/null <<'EOF'
+Cloud9 IDE@1
+c9.ide.collab@1
+c9.ide.find@1
+Cloud9 CLI@1
+EOF
+
+    "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_SETTING_DIR}"
+}
+
+validate_user_components() {
+    [[ -f "${C9_SETTING_DIR}/installed" ]] \
+        || die "Missing Cloud9 installed manifest: ${C9_SETTING_DIR}/installed"
+    [[ -f "${C9_SETTING_DIR}/node_modules/nak/bin/nak" ]] \
+        || die "Missing nak binary: ${C9_SETTING_DIR}/node_modules/nak/bin/nak"
 }
 
 escape_single_quotes() {
@@ -266,7 +292,7 @@ escape_single_quotes() {
 }
 
 create_launcher() {
-    local esc_user esc_pass esc_listen esc_port esc_home esc_work esc_install
+    local esc_user esc_pass esc_listen esc_port esc_home esc_work esc_install esc_setting
     esc_user="$(escape_single_quotes "${AUTH_USER}")"
     esc_pass="$(escape_single_quotes "${AUTH_PASS}")"
     esc_listen="$(escape_single_quotes "${C9_LISTEN}")"
@@ -274,6 +300,7 @@ create_launcher() {
     esc_home="$(escape_single_quotes "${C9_RUNTIME_HOME}")"
     esc_work="$(escape_single_quotes "${C9_WORKSPACE_DIR}")"
     esc_install="$(escape_single_quotes "${C9_INSTALL_DIR}")"
+    esc_setting="$(escape_single_quotes "${C9_SETTING_DIR}")"
 
     "${SUDO[@]}" tee "${C9_LAUNCHER_PATH}" >/dev/null <<EOF
 #!/usr/bin/env bash
@@ -284,6 +311,7 @@ exec /usr/local/bin/node '${esc_install}/server.js' \\
     --listen '${esc_listen}' \\
     --port '${esc_port}' \\
     --auth '${esc_user}:${esc_pass}' \\
+    --setting-path '${esc_setting}' \\
     -w '${esc_work}'
 EOF
     "${SUDO[@]}" chmod 0755 "${C9_LAUNCHER_PATH}"
@@ -341,6 +369,8 @@ main() {
     repair_c9_install
     validate_c9_install
     ensure_runtime_user
+    install_user_components
+    validate_user_components
     create_launcher
     create_systemd_service
     print_summary

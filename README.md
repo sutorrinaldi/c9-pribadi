@@ -8,6 +8,7 @@ Setelah install selesai:
 - tetap hidup walau terminal ditutup
 - otomatis aktif lagi saat VPS reboot
 - login memakai `username` dan `password` yang dimasukkan saat install
+- `Find in Files` sudah dipasang saat install, jadi popup `Cloud9 Installer` tidak muncul lagi pada login pertama
 
 ## Dukungan
 
@@ -100,6 +101,7 @@ Variabel yang bisa diubah:
 - `C9_INSTALL_DIR`
 - `C9_SERVICE_NAME`
 - `C9_WORKSPACE_DIR`
+- `C9_SETTING_DIR`
 
 ## Catatan
 
