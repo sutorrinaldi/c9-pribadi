@@ -11,6 +11,7 @@ Setelah install selesai:
 - `Find in Files` sudah dipasang saat install, jadi popup `Cloud9 Installer` tidak muncul lagi pada login pertama
 - state workspace awal diperbaiki otomatis, jadi tree `workspace` tidak macet loading karena `expanded=[]`
 - self-check installer GUI bawaan Cloud9 dimatikan untuk mode personal ini, supaya koneksi awal VFS tidak menggantung
+- kompatibilitas VFS write diperbaiki, jadi toast `Failed to write to 'state.settings'` tidak muncul lagi di Node/Ubuntu modern
 
 ## Dukungan
 
@@ -145,6 +146,7 @@ Selain itu installer terbaru juga:
 - mem-patch bug tree Cloud9 lama saat `state/projecttree/expanded` kosong
 - memperbaiki atau membuat file `workspace/.c9/state.settings`
 - menjaga root `workspace` tetap bisa dibuka walau state lama sempat korup
+- mem-patch jalur `PUT` VFS supaya penyimpanan `state.settings` dan `project.settings` tetap terbaca sebagai stream
 
 ## Troubleshooting
 

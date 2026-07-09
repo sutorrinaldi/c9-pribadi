@@ -250,6 +250,47 @@ PY
     fi
 }
 
+patch_c9_vfs_write_stream() {
+    local restful_path localfs_path
+    restful_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-http-adapter/restful.js"
+    localfs_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-local/localfs.js"
+
+    [[ -f "${restful_path}" ]] || die "Missing VFS HTTP adapter: ${restful_path}"
+    [[ -f "${localfs_path}" ]] || die "Missing local VFS implementation: ${localfs_path}"
+
+    log "Patching Cloud9 VFS write stream compatibility"
+
+    if ! "${SUDO[@]}" python3 - "${restful_path}" "${localfs_path}" <<'PY'
+import pathlib
+import sys
+
+restful_path = pathlib.Path(sys.argv[1])
+localfs_path = pathlib.Path(sys.argv[2])
+
+restful_text = restful_path.read_text()
+restful_old = """            else {\n                var opts = { stream: req, parents: true };\n                if (parseInt(req.headers[\"content-length\"], 10) < MAX_BUFFER_FILESIZE)\n                    opts.bufferWrite = true;\n                    \n                vfs.mkfile(path, opts, function (err, meta) {\n                    if (err) return abort(err);\n                    res.statusCode = 201;\n                    res.end();\n                });\n            }\n"""
+restful_new = """            else {\n                var input = req;\n                if (input && input.readable === false && input.body != null) {\n                    input = new Stream();\n                    input.readable = true;\n                    process.nextTick(function() {\n                        var body = req.body;\n                        if (typeof body === \"object\" && !Buffer.isBuffer(body))\n                            body = JSON.stringify(body);\n                        if (body)\n                            input.emit(\"data\", body);\n                        input.emit(\"end\");\n                    });\n                }\n                else if (input && input.readable !== true\n                  && (typeof input.on === \"function\" || typeof input.pipe === \"function\")) {\n                    input.readable = true;\n                }\n\n                var opts = { stream: input, parents: true };\n                if (parseInt(req.headers[\"content-length\"], 10) < MAX_BUFFER_FILESIZE)\n                    opts.bufferWrite = true;\n                    \n                vfs.mkfile(path, opts, function (err, meta) {\n                    if (err) return abort(err);\n                    res.statusCode = 201;\n                    res.end();\n                });\n            }\n"""
+if restful_old not in restful_text and restful_new not in restful_text:
+    raise SystemExit("Unable to patch VFS HTTP PUT stream handling")
+if restful_old in restful_text:
+    restful_text = restful_text.replace(restful_old, restful_new, 1)
+
+localfs_text = localfs_path.read_text()
+localfs_old = """        if (options.stream && !options.stream.readable) {\n            return callback(new TypeError(\"options.stream must be readable.\"));\n        }\n"""
+localfs_new = """        if (options.stream\n          && options.stream.readable === false\n          && typeof options.stream.on !== \"function\"\n          && typeof options.stream.pipe !== \"function\") {\n            return callback(new TypeError(\"options.stream must be readable.\"));\n        }\n"""
+if localfs_old not in localfs_text and localfs_new not in localfs_text:
+    raise SystemExit("Unable to patch local VFS stream validation")
+if localfs_old in localfs_text:
+    localfs_text = localfs_text.replace(localfs_old, localfs_new, 1)
+
+restful_path.write_text(restful_text)
+localfs_path.write_text(localfs_text)
+PY
+    then
+        die "Failed to patch Cloud9 VFS write stream compatibility."
+    fi
+}
+
 run_npm_install() {
     local npm_major legacy_flag=()
     npm_major="$(npm --version | cut -d. -f1)"
@@ -732,6 +773,7 @@ main() {
     verify_c9_commit
     patch_c9_pty_loader
     patch_c9_workspace_bootstrap
+    patch_c9_vfs_write_stream
     run_npm_install
     restore_vendored_modules
     repair_c9_install
