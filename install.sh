@@ -187,6 +187,69 @@ path.write_text(text.replace(old, new, 1))
 PY
 }
 
+patch_c9_workspace_bootstrap() {
+    local tree_path default_config_path standalone_config_path
+    tree_path="${C9_INSTALL_DIR}/plugins/c9.ide.tree/tree.js"
+    default_config_path="${C9_INSTALL_DIR}/configs/ide/default.js"
+    standalone_config_path="${C9_INSTALL_DIR}/configs/standalone.js"
+
+    [[ -f "${tree_path}" ]] || die "Missing tree plugin: ${tree_path}"
+    [[ -f "${default_config_path}" ]] || die "Missing IDE default config: ${default_config_path}"
+    [[ -f "${standalone_config_path}" ]] || die "Missing standalone config: ${standalone_config_path}"
+
+    log "Patching Cloud9 workspace bootstrap"
+
+    if ! "${SUDO[@]}" python3 - "${tree_path}" "${default_config_path}" "${standalone_config_path}" <<'PY'
+import pathlib
+import sys
+
+tree_path = pathlib.Path(sys.argv[1])
+default_config_path = pathlib.Path(sys.argv[2])
+standalone_config_path = pathlib.Path(sys.argv[3])
+
+tree_text = tree_path.read_text()
+tree_replacements = [
+    (
+        """                if (settings.exist("state/projecttree/expanded")) {\n                    var paths = settings.getJson("state/projecttree/expanded") || ["/"];\n                    paths.forEach(function(path) { expandedList[path] = true; });\n""",
+        """                if (settings.exist("state/projecttree/expanded")) {\n                    var paths = settings.getJson("state/projecttree/expanded");\n                    if (!Array.isArray(paths) || !paths.length)\n                        paths = ["/"];\n                    paths.forEach(function(path) { expandedList[path] = true; });\n"""
+    ),
+    (
+        """            if (!count) {\n                refreshing = false; // Needed because settings.on("read") sets it\n                return callback && callback("Nothing to do");\n            }\n""",
+        """            if (!count) {\n                expandedList["/"] = true;\n                expandedNodes = ["/"];\n                count = 1;\n            }\n"""
+    )
+]
+
+for old, new in tree_replacements:
+    if old not in tree_text and new not in tree_text:
+        raise SystemExit("Unable to patch workspace tree bootstrap logic")
+    if old in tree_text:
+        tree_text = tree_text.replace(old, new, 1)
+
+default_text = default_config_path.read_text()
+default_old = """            installSelfCheck: true,\n"""
+default_new = """            installSelfCheck: options.installSelfCheck !== false,\n"""
+if default_old not in default_text and default_new not in default_text:
+    raise SystemExit("Unable to patch IDE installer self-check flag")
+if default_old in default_text:
+    default_text = default_text.replace(default_old, default_new, 1)
+
+standalone_text = standalone_config_path.read_text()
+standalone_old = """    config.settingDir = argv["setting-path"];\n"""
+standalone_new = """    config.settingDir = argv["setting-path"];\n    config.installSelfCheck = false;\n"""
+if standalone_old not in standalone_text and standalone_new not in standalone_text:
+    raise SystemExit("Unable to patch standalone self-check config")
+if standalone_old in standalone_text:
+    standalone_text = standalone_text.replace(standalone_old, standalone_new, 1)
+
+tree_path.write_text(tree_text)
+default_config_path.write_text(default_text)
+standalone_config_path.write_text(standalone_text)
+PY
+    then
+        die "Failed to patch Cloud9 workspace bootstrap logic."
+    fi
+}
+
 run_npm_install() {
     local npm_major legacy_flag=()
     npm_major="$(npm --version | cut -d. -f1)"
@@ -307,6 +370,55 @@ ensure_runtime_user() {
     "${SUDO[@]}" mkdir -p "${C9_INSTALL_DIR}/build"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_RUNTIME_HOME}"
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_INSTALL_DIR}/build"
+}
+
+repair_workspace_settings() {
+    log "Repairing Cloud9 workspace state"
+    "${SUDO[@]}" mkdir -p "${C9_WORKSPACE_DIR}/.c9"
+    run_as_runtime_user \
+        python3 - "${C9_WORKSPACE_DIR}" <<'PY'
+import json
+import pathlib
+import sys
+
+workspace_dir = pathlib.Path(sys.argv[1])
+settings_dir = workspace_dir / ".c9"
+state_path = settings_dir / "state.settings"
+project_path = settings_dir / "project.settings"
+
+def load_json(path):
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+state = load_json(state_path)
+project = load_json(project_path)
+
+projecttree = state.setdefault("projecttree", {})
+projecttree.setdefault("@showfs", True)
+
+expanded = projecttree.get("expanded")
+if not isinstance(expanded, dict):
+    expanded = {}
+projecttree["expanded"] = expanded
+
+expanded_value = expanded.get("json()")
+if not isinstance(expanded_value, list) or not expanded_value:
+    expanded["json()"] = ["/"]
+
+tree_selection = state.get("tree_selection")
+if not isinstance(tree_selection, dict):
+    tree_selection = {}
+state["tree_selection"] = tree_selection
+
+tree_selection_value = tree_selection.get("json()")
+if not isinstance(tree_selection_value, list) or not tree_selection_value:
+    tree_selection["json()"] = ["/"]
+
+state_path.write_text(json.dumps(state, indent=2) + "\n")
+project_path.write_text(json.dumps(project, indent=2) + "\n")
+PY
 }
 
 install_terminal_components() {
@@ -619,11 +731,13 @@ main() {
     prepare_c9_checkout
     verify_c9_commit
     patch_c9_pty_loader
+    patch_c9_workspace_bootstrap
     run_npm_install
     restore_vendored_modules
     repair_c9_install
     validate_c9_install
     ensure_runtime_user
+    repair_workspace_settings
     install_terminal_components
     validate_terminal_components
     install_user_components

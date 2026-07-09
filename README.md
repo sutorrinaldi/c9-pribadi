@@ -9,6 +9,8 @@ Setelah install selesai:
 - otomatis aktif lagi saat VPS reboot
 - login memakai `username` dan `password` yang dimasukkan saat install
 - `Find in Files` sudah dipasang saat install, jadi popup `Cloud9 Installer` tidak muncul lagi pada login pertama
+- state workspace awal diperbaiki otomatis, jadi tree `workspace` tidak macet loading karena `expanded=[]`
+- self-check installer GUI bawaan Cloud9 dimatikan untuk mode personal ini, supaya koneksi awal VFS tidak menggantung
 
 ## Dukungan
 
@@ -138,6 +140,12 @@ Installer terbaru juga mem-patch loader PTY bawaan Cloud9 agar:
 - menampilkan error PTY asli di `journalctl` kalau native binary gagal di-load
 - menjalankan smoke test PTY saat install, jadi install gagal lebih awal kalau backend terminal memang belum sehat
 
+Selain itu installer terbaru juga:
+
+- mem-patch bug tree Cloud9 lama saat `state/projecttree/expanded` kosong
+- memperbaiki atau membuat file `workspace/.c9/state.settings`
+- menjaga root `workspace` tetap bisa dibuka walau state lama sempat korup
+
 ## Troubleshooting
 
 Kalau ingin melihat log terbaru service:
@@ -151,6 +159,16 @@ Atau setelah restart:
 ```bash
 sudo systemctl restart c9-pribadi
 sudo journalctl -u c9-pribadi -n 80 -l --no-pager
+```
+
+Kalau tampilan `workspace` pernah stuck loading, update script lalu jalankan ulang installer:
+
+```bash
+cd ~/c9-pribadi
+git fetch origin
+git reset --hard origin/master
+chmod +x install.sh
+sudo ./install.sh
 ```
 
 ## Catatan
