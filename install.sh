@@ -386,9 +386,18 @@ install_python2_pip_runtime() {
 install_python_command_aliases() {
     local python3_bin pip3_bin
 
-    python3_bin="$(command -v python3 || true)"
+    if [[ -x /usr/bin/python3 ]]; then
+        python3_bin="/usr/bin/python3"
+    else
+        python3_bin="$(command -v python3 || true)"
+    fi
     [[ -n "${python3_bin}" ]] || die "python3 binary not found after package installation."
-    pip3_bin="$(command -v pip3 || true)"
+
+    if [[ -x /usr/bin/pip3 ]]; then
+        pip3_bin="/usr/bin/pip3"
+    else
+        pip3_bin="$(command -v pip3 || true)"
+    fi
     [[ -n "${pip3_bin}" ]] || die "pip3 binary not found after package installation."
 
     "${SUDO[@]}" ln -sfn "${python3_bin}" /usr/local/bin/python
