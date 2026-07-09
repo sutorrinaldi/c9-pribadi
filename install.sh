@@ -338,19 +338,22 @@ PY
 }
 
 patch_c9_upload_drop_behavior() {
-    local upload_path
+    local upload_path dragdrop_path
     upload_path="${C9_INSTALL_DIR}/plugins/c9.ide.upload/upload.js"
+    dragdrop_path="${C9_INSTALL_DIR}/plugins/c9.ide.upload/dragdrop.js"
 
     [[ -f "${upload_path}" ]] || die "Missing upload plugin: ${upload_path}"
+    [[ -f "${dragdrop_path}" ]] || die "Missing dragdrop plugin: ${dragdrop_path}"
 
     log "Patching Cloud9 drag-and-drop upload behavior"
 
-    if ! "${SUDO[@]}" python3 - "${upload_path}" <<'PY'
+    if ! "${SUDO[@]}" python3 - "${upload_path}" "${dragdrop_path}" <<'PY'
 import pathlib
 import sys
 
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
+upload_path = pathlib.Path(sys.argv[1])
+dragdrop_path = pathlib.Path(sys.argv[2])
+text = upload_path.read_text()
 
 old_signature = """        function uploadBatch(batch, targetPath) {\n"""
 new_signature = """        function uploadBatch(batch, targetPath, sourceType) {\n"""
@@ -373,7 +376,16 @@ if old_block not in text and new_block not in text:
 if old_block in text:
     text = text.replace(old_block, new_block, 1)
 
-path.write_text(text)
+dragdrop_text = dragdrop_path.read_text()
+dragdrop_old = """        function findHost(el, e) {\n            var ctrlKey = dragContext.ctrlKey = e.ctrlKey;\n            var treeEl = tree.getElement(\"container\");\n            if (treeAsPane && !ctrlKey) {\n                treeEl = treeEl.parentNode;\n            }\n            \n            while (el) {\n                var host = el.host;\n                if (host && (host.cloud9pane))\n                    return host;\n                if (host && (host === treeEl))\n                    return treeAsPane && !ctrlKey ? {\n                        cloud9pane: {\n                            isTree: true,\n                            container: host.$ext,\n                            dropboxTitle: \"Drop a file or folder\"\n                        }\n                    } : host;\n                \n                if (el === dropbox) {\n                    if (treeAsPane && ctrlKey && dragContext.pane.isTree)\n                        return treeEl;\n                    return { cloud9pane: dragContext.pane };\n                }\n                \n                el = el.parentNode;\n            }\n        }\n"""
+dragdrop_new = """        function findHost(el, e) {\n            var ctrlKey = dragContext.ctrlKey = e.ctrlKey;\n            var treeNode = tree.getElement(\"container\");\n            var treeEl = treeNode && (treeNode.$ext || treeNode);\n            var treeInt = treeNode && (treeNode.$int || treeNode);\n            if (treeAsPane && !ctrlKey && treeEl && treeEl.parentNode) {\n                treeEl = treeEl.parentNode;\n            }\n            \n            while (el) {\n                if ((treeInt && treeInt.contains && treeInt.contains(el))\n                  || (treeEl && treeEl.contains && treeEl.contains(el))\n                  || el === treeEl || el === treeInt) {\n                    return treeAsPane && !ctrlKey ? {\n                        cloud9pane: {\n                            isTree: true,\n                            container: treeNode.$ext,\n                            dropboxTitle: \"Drop a file or folder\"\n                        }\n                    } : treeNode;\n                }\n\n                var host = el.host;\n                if (host && (host.cloud9pane))\n                    return host;\n                if (host && (host === treeNode))\n                    return treeAsPane && !ctrlKey ? {\n                        cloud9pane: {\n                            isTree: true,\n                            container: host.$ext,\n                            dropboxTitle: \"Drop a file or folder\"\n                        }\n                    } : host;\n                \n                if (el === dropbox) {\n                    if (treeAsPane && ctrlKey && dragContext.pane.isTree)\n                        return treeNode;\n                    return { cloud9pane: dragContext.pane };\n                }\n                \n                el = el.parentNode || el.host;\n            }\n        }\n"""
+if dragdrop_old not in dragdrop_text and dragdrop_new not in dragdrop_text:
+    raise SystemExit("Unable to patch dragdrop tree target detection")
+if dragdrop_old in dragdrop_text:
+    dragdrop_text = dragdrop_text.replace(dragdrop_old, dragdrop_new, 1)
+
+upload_path.write_text(text)
+dragdrop_path.write_text(dragdrop_text)
 PY
     then
         die "Failed to patch Cloud9 drag-and-drop upload behavior."
@@ -441,13 +453,14 @@ repair_c9_install() {
 }
 
 validate_c9_patches() {
-    local localfs_path restful_path tree_path default_config_path standalone_config_path upload_path
+    local localfs_path restful_path tree_path default_config_path standalone_config_path upload_path dragdrop_path
     localfs_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-local/localfs.js"
     restful_path="${C9_INSTALL_DIR}/plugins/node_modules/vfs-http-adapter/restful.js"
     tree_path="${C9_INSTALL_DIR}/plugins/c9.ide.tree/tree.js"
     default_config_path="${C9_INSTALL_DIR}/configs/ide/default.js"
     standalone_config_path="${C9_INSTALL_DIR}/configs/standalone.js"
     upload_path="${C9_INSTALL_DIR}/plugins/c9.ide.upload/upload.js"
+    dragdrop_path="${C9_INSTALL_DIR}/plugins/c9.ide.upload/dragdrop.js"
 
     "${SUDO[@]}" grep -q "node-pty-prebuilt-multiarch" "${localfs_path}" \
         || die "Cloud9 PTY loader patch missing after install repair."
@@ -463,6 +476,8 @@ validate_c9_patches() {
         || die "Cloud9 standalone self-check patch missing after install repair."
     "${SUDO[@]}" grep -q 'var shouldUploadToTree = !window.FileReader' "${upload_path}" \
         || die "Cloud9 drag-and-drop upload patch missing after install repair."
+    "${SUDO[@]}" grep -q 'treeInt.contains && treeInt.contains(el)' "${dragdrop_path}" \
+        || die "Cloud9 drag-and-drop tree target patch missing after install repair."
 }
 
 validate_c9_install() {
