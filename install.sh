@@ -26,6 +26,7 @@ C9_INSTALL_FFMPEG="${C9_INSTALL_FFMPEG:-1}"
 C9_FFMPEG_APT_PACKAGE="${C9_FFMPEG_APT_PACKAGE:-ffmpeg}"
 C9_INSTALL_REDIS_SERVER="${C9_INSTALL_REDIS_SERVER:-1}"
 C9_REDIS_SERVER_APT_PACKAGE="${C9_REDIS_SERVER_APT_PACKAGE:-redis-server}"
+C9_ENABLE_SUDO="${C9_ENABLE_SUDO:-1}"
 C9_SERVICE_NAME="${C9_SERVICE_NAME:-c9-pribadi}"
 C9_RUNTIME_USER="${C9_RUNTIME_USER:-c9pribadi}"
 C9_RUNTIME_GROUP="${C9_RUNTIME_GROUP:-c9pribadi}"
@@ -38,6 +39,7 @@ C9_LAUNCHER_PATH="${C9_LAUNCHER_PATH:-/usr/local/bin/c9-pribadi-server}"
 C9_SETTING_DIR="${C9_SETTING_DIR:-${C9_RUNTIME_HOME}/.c9}"
 C9_NODE_LINK_DIR="${C9_NODE_LINK_DIR:-${C9_SETTING_DIR}/node/bin}"
 C9_RUNTIME_PATH_FILE="${C9_RUNTIME_PATH_FILE:-${C9_RUNTIME_HOME}/.c9-runtime-path.sh}"
+C9_SUDOERS_FILE="${C9_SUDOERS_FILE:-/etc/sudoers.d/${C9_SERVICE_NAME}}"
 C9_PTY_PACKAGE_NAME="${C9_PTY_PACKAGE_NAME:-node-pty-prebuilt-multiarch}"
 C9_PTY_PACKAGE_VERSION="${C9_PTY_PACKAGE_VERSION:-0.10.1-pre.5}"
 C9_PYTHON3_APT_PACKAGES="${C9_PYTHON3_APT_PACKAGES:-python3 python3-dev python3-pip python3-venv}"
@@ -173,6 +175,7 @@ install_base_packages() {
         lsb-release
         python3
         software-properties-common
+        sudo
         tar
         tmux
         unzip
@@ -951,6 +954,28 @@ ensure_runtime_user() {
     "${SUDO[@]}" chown -R "${C9_RUNTIME_USER}:${C9_RUNTIME_GROUP}" "${C9_INSTALL_DIR}/build"
 }
 
+configure_runtime_sudo() {
+    if is_enabled "${C9_ENABLE_SUDO}"; then
+        :
+    elif [[ $? -eq 1 ]]; then
+        return
+    else
+        die "C9_ENABLE_SUDO must be 1/0, true/false, or yes/no."
+    fi
+
+    log "Granting passwordless sudo to ${C9_RUNTIME_USER}"
+    "${SUDO[@]}" usermod -aG sudo "${C9_RUNTIME_USER}"
+    "${SUDO[@]}" tee "${C9_SUDOERS_FILE}" >/dev/null <<EOF
+${C9_RUNTIME_USER} ALL=(ALL) NOPASSWD:ALL
+EOF
+    "${SUDO[@]}" chmod 0440 "${C9_SUDOERS_FILE}"
+    "${SUDO[@]}" visudo -cf "${C9_SUDOERS_FILE}" >/dev/null \
+        || die "Generated sudoers file is invalid: ${C9_SUDOERS_FILE}"
+
+    run_as_runtime_user sudo -n true >/dev/null 2>&1 \
+        || die "sudo validation failed for ${C9_RUNTIME_USER}"
+}
+
 configure_runtime_shell_path() {
     local runtime_path profile_file bashrc_file source_line shell_file
 
@@ -1403,6 +1428,7 @@ main() {
     validate_c9_patches
     validate_c9_install
     ensure_runtime_user
+    configure_runtime_sudo
     configure_runtime_shell_path
     repair_workspace_settings
     install_terminal_components

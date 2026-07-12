@@ -22,6 +22,7 @@ Setelah install selesai:
 - `ffmpeg` langsung tersedia untuk encode, transcode, dan probing media
 - `redis-server` langsung dipasang dan dijalankan sebagai service
 - `composer` langsung tersedia setelah install
+- user terminal `c9pribadi` langsung bisa `sudo` tanpa password
 - `pip` dan `pip3` permanen diarahkan ke Python 3
 - `pip2` permanen diarahkan ke Python 2.7
 - `python2` permanen diarahkan ke `Python 2.7`
@@ -74,6 +75,8 @@ Setelah selesai, buka URL yang ditampilkan installer lalu login.
 
 Command runtime setelah install:
 
+- `sudo apt update`
+- `sudo apt install nama-paket`
 - `php file.php`
 - `composer install`
 - `php -m | grep imagick`
@@ -97,6 +100,13 @@ Catatan Python 3 di Ubuntu modern:
 - `pip install` global bisa ditolak oleh proteksi `PEP 668`
 - kalau mau install ke user, pakai `pip install --user --break-system-packages nama-paket`
 - script hasil install user akan otomatis terbaca karena `~/.local/bin` sudah dimasukkan ke PATH oleh installer
+
+Catatan sudo:
+
+- secara default installer memberi `NOPASSWD sudo` ke user `c9pribadi`
+- ini dibuat supaya terminal Cloud9 bisa langsung pakai `sudo` tanpa prompt password Linux
+- ini berarti user Cloud9 tersebut punya akses root penuh ke VPS
+- kalau tidak mau perilaku ini, install dengan `sudo C9_ENABLE_SUDO=0 ./install.sh`
 
 ## Popup installer
 
@@ -176,6 +186,7 @@ Variabel yang bisa diubah:
 - `C9_FFMPEG_APT_PACKAGE`
 - `C9_INSTALL_REDIS_SERVER`
 - `C9_REDIS_SERVER_APT_PACKAGE`
+- `C9_ENABLE_SUDO`
 - `C9_EXTRA_APT_PACKAGES`
 - `C9_PYTHON3_APT_PACKAGES`
 - `C9_PYTHON2_BUILD_APT_PACKAGES`
@@ -209,6 +220,12 @@ Kalau tidak ingin `ffmpeg` dipasang:
 
 ```bash
 sudo C9_INSTALL_FFMPEG=0 ./install.sh
+```
+
+Kalau tidak ingin user `c9pribadi` bisa `sudo`:
+
+```bash
+sudo C9_ENABLE_SUDO=0 ./install.sh
 ```
 
 ## Reinstall atau update
